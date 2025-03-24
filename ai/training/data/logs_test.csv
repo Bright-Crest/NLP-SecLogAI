@@ -1,0 +1,16 @@
+text,label,is_anomaly
+"User admin failed to login from 192.168.1.100",0,1
+"User john successfully logged in from 10.0.0.5",0,0
+"User admin successfully logged in from 192.168.1.100",0,0
+"User guest failed to login from 172.16.5.100",0,1
+"User admin successfully logged off",1,0
+"User john accessed file D:\Shared\confidential.docx",3,0
+"User admin accessed file C:\Windows\System32\config\SAM",3,1
+"Firewall: Blocked connection from 8.8.8.8 to 192.168.1.5 port 22",2,1
+"Firewall: Allowed connection from 192.168.1.100 to 8.8.8.8 port 443",2,0
+"Firewall: Blocked connection from 103.74.19.104 to 192.168.1.1 port 22",2,1
+"System Error: Disk space low on drive C: (5% remaining)",4,0
+"System Error: Service failed to start: Windows Update",4,0
+"System Error: Memory usage exceeded 90% threshold",4,1
+"Multiple failed login attempts detected for user root",0,1
+"Blocked connection from 5.188.206.18 to 192.168.1.15 port 3306",2,1 
