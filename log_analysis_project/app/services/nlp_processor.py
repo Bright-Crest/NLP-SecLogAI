@@ -2,25 +2,31 @@
 # -*- coding: utf-8 -*-
 
 """
-自然语言转SQL模块
-将用户的自然语言查询转换为结构化SQL查询
+NLP处理器模块
+将自然语言查询转换为SQL查询
+使用OpenRouter API进行NLP处理
 """
 
 import os
 import re
 import json
+import requests
 from typing import Dict, Any, List, Optional
-import openai
+from dotenv import load_dotenv
 
-# 加载OpenAI API密钥（从环境变量或配置文件）
-openai.api_key = os.environ.get("OPENAI_API_KEY", "")
+# 加载环境变量
+load_dotenv()
+
+# 获取OpenRouter API密钥
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 
 class NL2SQLConverter:
     """自然语言转SQL转换器"""
     
     def __init__(self, 
-                 model_name: str = "gpt-3.5-turbo", 
+                 model_name: str = "anthropic/claude-3-opus", 
                  table_schema: Optional[Dict[str, Any]] = None,
                  max_tokens: int = 500,
                  temperature: float = 0.1):
@@ -28,7 +34,7 @@ class NL2SQLConverter:
         初始化转换器
         
         Args:
-            model_name: OpenAI模型名称
+            model_name: OpenRouter模型名称
             table_schema: 数据库表结构
             max_tokens: 最大生成令牌数
             temperature: 生成温度
@@ -54,6 +60,17 @@ class NL2SQLConverter:
                         {"name": "port", "type": "INTEGER", "description": "端口号"},
                         {"name": "is_anomaly", "type": "BOOLEAN", "description": "是否为异常"}
                     ]
+                },
+                "anomalies": {
+                    "columns": [
+                        {"name": "id", "type": "INTEGER", "description": "异常ID"},
+                        {"name": "log_id", "type": "INTEGER", "description": "关联的日志ID"},
+                        {"name": "timestamp", "type": "TIMESTAMP", "description": "异常发生时间"},
+                        {"name": "user", "type": "TEXT", "description": "相关用户"},
+                        {"name": "event_type", "type": "TEXT", "description": "事件类型"},
+                        {"name": "src_ip", "type": "TEXT", "description": "源IP地址"},
+                        {"name": "reason", "type": "TEXT", "description": "异常原因"}
+                    ]
                 }
             }
         else:
@@ -77,8 +94,8 @@ class NL2SQLConverter:
         
         try:
             # 调用模型
-            if openai.api_key:
-                result = self._call_openai_api(prompt)
+            if OPENROUTER_API_KEY:
+                result = self._call_openrouter_api(prompt)
             else:
                 # 如果没有API密钥，使用模式匹配生成简单SQL
                 result = self._pattern_matching_fallback(processed_query)
@@ -107,6 +124,7 @@ class NL2SQLConverter:
         # 将时间表达式规范化
         query_text = re.sub(r'过去(\d+)小时', r'在最近\1小时', query_text)
         query_text = re.sub(r'最近(\d+)天', r'在最近\1天', query_text)
+        query_text = re.sub(r'最近(\d+)分钟', r'在最近\1分钟', query_text)
         
         # 处理常见别名
         query_text = query_text.replace('登录失败', 'status=failure AND event_type=logon')
@@ -132,25 +150,40 @@ class NL2SQLConverter:
 
 用户查询: {query_text}
 
-请生成一个SQL查询来满足用户的要求。只返回SQL查询语句，不需要任何其他解释。
+请生成一个SQL查询来满足用户的要求。只返回SQL查询语句，不需要任何其他解释。确保SQL语句对SQLite是有效的。使用标准SQL时间函数如datetime('now', '-X day/hour/minute')处理时间。
         """
         
         return prompt
     
-    def _call_openai_api(self, prompt: str) -> str:
-        """调用OpenAI API"""
-        response = openai.ChatCompletion.create(
-            model=self.model_name,
-            messages=[
+    def _call_openrouter_api(self, prompt: str) -> str:
+        """调用OpenRouter API"""
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://example.com", # 您的网站URL
+            "X-Title": "NLP-SecLogAI"  # 您的应用名称
+        }
+        
+        data = {
+            "model": self.model_name,
+            "messages": [
                 {"role": "system", "content": "你是一个专门将自然语言转换为SQL查询的AI助手。只输出SQL查询语句。"},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=self.max_tokens,
-            temperature=self.temperature
-        )
+            "max_tokens": self.max_tokens,
+            "temperature": self.temperature
+        }
+        
+        response = requests.post(OPENROUTER_API_URL, headers=headers, json=data)
+        response.raise_for_status()  # 如果请求失败则引发异常
+        
+        response_data = response.json()
         
         # 提取生成的SQL
-        return response.choices[0].message.content.strip()
+        if "choices" in response_data and len(response_data["choices"]) > 0:
+            return response_data["choices"][0]["message"]["content"].strip()
+        else:
+            raise ValueError("无法从API响应中获取内容")
     
     def _extract_sql(self, text: str) -> str:
         """从模型输出中提取SQL语句"""
@@ -176,7 +209,7 @@ class NL2SQLConverter:
             time_range = int(time_range_match.group(1))
         
         # 查找用户名
-        user_match = re.search(r'用户[:\s]*([^\s]+)', query_text)
+        user_match = re.search(r'用户[:\s]*([^\s]+)', query_text) or re.search(r'([^\s]+)用户', query_text)
         user_condition = ""
         if user_match:
             user = user_match.group(1)
@@ -190,7 +223,7 @@ class NL2SQLConverter:
             return f"""
 SELECT COUNT(*) as failure_count 
 FROM logs 
-WHERE timestamp >= NOW() - INTERVAL '{time_range} HOUR' 
+WHERE timestamp >= datetime('now', '-{time_range} hour') 
 AND status = 'failure' 
 AND event_type = 'logon' 
 {user_condition}
@@ -201,8 +234,8 @@ ORDER BY failure_count DESC;
             return f"""
 SELECT timestamp, src_ip, event_type, raw_text 
 FROM logs 
-WHERE timestamp >= NOW() - INTERVAL '{time_range} HOUR' 
-AND is_anomaly = TRUE 
+WHERE timestamp >= datetime('now', '-{time_range} hour') 
+AND is_anomaly = 1 
 ORDER BY timestamp DESC;
             """.strip()
         else:
@@ -210,7 +243,22 @@ ORDER BY timestamp DESC;
             return f"""
 SELECT timestamp, event_type, user, status, raw_text 
 FROM logs 
-WHERE timestamp >= NOW() - INTERVAL '{time_range} HOUR' 
+WHERE timestamp >= datetime('now', '-{time_range} hour') 
 ORDER BY timestamp DESC 
 LIMIT 100;
-            """.strip() 
+            """.strip()
+
+
+def convert_to_sql(query_text: str) -> str:
+    """
+    将自然语言查询转换为SQL查询
+    
+    Args:
+        query_text: 自然语言查询文本
+        
+    Returns:
+        SQL查询字符串
+    """
+    converter = NL2SQLConverter()
+    result = converter.convert(query_text)
+    return result["sql"] 
