@@ -1,123 +1,140 @@
-# 🚀 TinyLogBERT - 无盒标日志异常检测简单版项目设计
-
-## 目标
-
-在 2 天内完成一个可运行、可扩展、可清晰量化无盒标日志异常检测系统原型，基于 TinyLogBERT 微调。
+# 📁 基于 BERT-mini + Fixed & Sliding Windows + 无盒标学习的日志异常检测项目
 
 ---
 
-## 内容
+## 一、🚀 项目总览
 
-### ✅ 模块化设计
-
-| 模块 | 功能 |
-|--------|------|
-| `log_parser.py` | 日志转换 Token/Text |
-| `anomaly_detector.py` | 微调 TinyBERT + 输出异常得分 |
-| `anomaly_routes.py` | API接口，接收日志，返回异常结果 |
-| `evaluate.py` | ROC-AUC/分数分布等量化无盒标效果 |
+本项目旨在使用较为轻量级的 BERT-mini 模型，配合 fixed windows 和 sliding windows 方法构造日志行为序列，实现无需标注的日志异常检测系统，并保持可简易部署和提供强扩展性。
 
 ---
 
-## 日志数据集
+## 二、🔢 核心技术路线
 
-### 选择: [HDFS 日志数据集](https://github.com/logpai/loghub)
-- 日志格式简单，含有模板 ID，适合无盒标学习
-- 选取 5~10 万条日志进行预处理
-
-```
-2023-10-10 08:02:30.123 INFO DFSClient: Successfully read block BP-xxx
-```
-
-转换为:
-```
-["dfsclient", "successfully", "read", "block"]
-```
+| 组件 | 技术路线 |
+|--------|------------|
+| 模型基库 | `prajjwal1/bert-mini` (HuggingFace) |
+| 日志分组 | Fixed Windows + Sliding Windows |
+| 学习方式 | MLM (自相关) + Embedding 距离 / Score 方差分析 |
+| 无需标注 | 全部正常日志进行自相关训练 |
+| 异常量化 | ROC-AUC + t-SNE + 分布分析 |
 
 ---
 
-## 目录结构扩展
+## 三、🌐 数据处理
 
-在你的目录基础上，增加:
+### 输入日志格式：
+根据 Apache/Linux 原始日志格式，每条日志为一条记录
 
-```
-app/
-|— models/
-|   |— tinylogbert_model.py     # 基于 BERT-mini 的 TinyLogBERT + 异常头
-|— services/
-|   |— log_tokenizer.py         # 转 token 分词器
-|   |— anomaly_score.py         # 根据输入日志返回异常分
-|   |— evaluate.py              # 效果量化模块
+```text
+Oct 10 12:00:00 sshd[1000]: Failed password for root from 192.168.1.10
 ```
 
----
+### 预处理 (log_tokenizer.py):
+- 移除时间、loglevel
+- 把 IP 和 用户名等变量符号化
 
-## 核心代码
+```text
+→ "failed password for user from ip"
+```
 
-### 【models/tinylogbert_model.py】
+### 分组方式
+#### ὓ9 Fixed Windows:
+- 每 N=10 条日志为一组
 ```python
-from transformers import BertModel
-import torch.nn as nn
-
-class TinyLogBERT(nn.Module):
-    def __init__(self, base_model):
-        super().__init__()
-        self.encoder = base_model
-        self.anomaly_head = nn.Sequential(
-            nn.Linear(256, 64),
-            nn.ReLU(),
-            nn.Linear(64, 1)  # 返回异常分
-        )
-
-    def forward(self, input_ids, attention_mask):
-        x = self.encoder(input_ids=input_ids, attention_mask=attention_mask).last_hidden_state[:,0,:]
-        return self.anomaly_head(x)
+[log0, log1, ..., log9] → 拼接为 "log0 [SEP] log1 [SEP] ..."
 ```
 
-### 【services/anomaly_score.py】
+#### ὓ9 Sliding Windows:
+- 每步长 1 ，切割短帧
 ```python
-import torch
-from transformers import BertTokenizer
-from app.models.tinylogbert_model import TinyLogBERT
-
-base_model = BertModel.from_pretrained('prajjwal1/bert-mini')
-tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-model = TinyLogBERT(base_model)
-model.load_state_dict(torch.load("./checkpoint/model.pt"))
-model.eval()
-
-def get_anomaly_score(log_text):
-    tokens = tokenizer(log_text, return_tensors="pt", truncation=True, padding=True)
-    with torch.no_grad():
-        score = model(**tokens)
-    return float(score.item())
-```
-
-### 【services/evaluate.py】
-```python
-from sklearn.metrics import roc_auc_score
-
-def evaluate_scores(scores, labels):
-    auc = roc_auc_score(labels, scores)
-    print("ROC-AUC:", auc)
-    return auc
+[log0:log9], [log1:log10], ...
 ```
 
 ---
 
-## 开发时间表
+## 四、📚 模型结构
 
-| 时间 | 任务 |
-|------|------|
-| D1-AM | 数据转化，加载 BERT-mini，建立 TinyLogBERT + Head |
-| D1-PM | 输入日志 转分词，培训 MLM 五轮，保存模型 |
-| D2-AM | 运行 score，扩展 Flask API + CLI |
-| D2-PM | 量化 evaluate.py 输出 AUC + t-SNE 可视化 |
+### 基础模型: BERT-mini
+- 4 层 Transformer
+- 11M 参数，适合 RTX 3050Ti
+
+### 输出头: MLP Anomaly Score Head
+```text
+[CLS] → Linear(256→64) → ReLU → Linear(64→1) → sigmoid
+```
+
+### 学习方式:
+| 任务 | 说明 |
+|--------|---------|
+| MLM | Masked Token 预添入训练 |
+| Embedding 差值 | 构造平均向量，距离过大则异常 |
+| Score 方差 | 用精度给出评分
 
 ---
 
-如需要：
-- 按需附上 notebook 模型训练脚本
-- 提供 FastAPI/分布式支持
-- 改造异常头输出 softmax 分级分类
+## 五、🏋️ 训练流程
+
+### Step 1 ：输入文本构造
+```python
+input_text = "log1 [SEP] log2 [SEP] ..."
+tokens = tokenizer(input_text)
+```
+
+### Step 2 ：MLM 自相关训练
+```python
+Trainer(..., mlm=True, data_collator=MaskCollator)
+```
+
+### Step 3 ：异常得分评估
+```python
+score = model(input_ids)
+sigmoid(score) → [0,1]
+```
+
+### Step 4 ：问题分类 (可选)
+- 根据 score 给出分级 (例如 >0.85 归为 high-risk)
+
+---
+
+## 六、🎯 评估指标
+
+| 指标 | 方法 |
+|--------|--------|
+| ROC-AUC | sklearn.roc_auc_score |
+| t-SNE 分布 | sklearn.manifold.TSNE + [CLS] embedding |
+| 异常分数分布 | 输出分数 hist |
+| 價值差值排序 | 排序 score 查看 top-N 日志 |
+
+---
+
+## 七、📢 上线 API
+
+### Flask API
+```json
+POST /score_log
+{
+  "log_seq": ["login failed from 1.1.1.1", "sudo reboot"]
+}
+→ { "score": 0.82, "is_anomaly": true }
+```
+
+### CLI
+```bash
+python ai_detect_cli.py --logs "log1" "log2" --window-type sliding
+```
+
+---
+
+## 八、🔄 扩展描述
+
+- 支持类 DeepLog 模型作为方向一
+- 支持加入 AutoEncoder / KNN score fusion 评估
+- 开放接入 GNN 主客体分析机制
+- 提供 GPT-解释异常故障
+
+---
+
+## 结言
+
+本项目采用简洁形式实现了无标注日志异常分析系统，采用形式化分组手段构造行为序列，保证体系体积汇创新。同时为后续加入解释性、行为分类和环境应对措施创造了基础。
 
