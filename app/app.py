@@ -67,3 +67,4 @@ if __name__ == '__main__':
     migrate = Migrate(app, get_db_connection)
 
     app.run(host='0.0.0.0', port=5000, debug=True)
+
