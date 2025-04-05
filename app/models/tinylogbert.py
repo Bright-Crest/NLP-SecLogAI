@@ -1,4 +1,6 @@
 import torch
+import os
+import json
 import torch.nn as nn
 import torch.nn.functional as F
 from transformers import BertModel, BertConfig, BertPreTrainedModel, BertForMaskedLM
@@ -918,14 +920,133 @@ class TinyLogBERT(BertForMaskedLM):
             output_hidden_states=True,
         )
         return outputs.hidden_states[-1][:, 0]
+    
+    def save_pretrained(self, save_directory, save_config=True, **kwargs):
+        """
+        保存模型权重及异常检测器特征内存
+        
+        参数:
+            save_directory: 保存目录
+            save_config: 是否保存配置文件
+            **kwargs: 传递给父类save_pretrained的其他参数
+        """
+        # 调用父类的save_pretrained方法保存模型权重
+        super().save_pretrained(save_directory, save_config=save_config, **kwargs)
+        
+        # 保存异常检测器特征内存
+        detector_dir = os.path.join(save_directory, "detectors")
+        os.makedirs(detector_dir, exist_ok=True)
+        
+        # 保存各个检测器的特征内存
+        for method, detector in self.anomaly_methods.items():
+            if hasattr(detector, "memory_features") and detector.memory_features is not None:
+                feature_path = os.path.join(detector_dir, f"{method}_features.npy")
+                np.save(feature_path, detector.memory_features)
+                
+                # 保存检测器参数
+                params = {
+                    "method": detector.method,
+                    "n_neighbors": detector.n_neighbors,
+                    "n_clusters": detector.n_clusters,
+                    "fit_memory_size": detector.fit_memory_size,
+                    "feature_dim": detector.feature_dim,
+                    "is_fitted": detector.is_fitted
+                }
+                param_path = os.path.join(detector_dir, f"{method}_params.json")
+                with open(param_path, "w") as f:
+                    json.dump(params, f)
+        
+        # 保存融合器性能指标
+        if hasattr(self.anomaly_ensemble, "detector_performance"):
+            ensemble_path = os.path.join(detector_dir, "ensemble_performance.json")
+            with open(ensemble_path, "w") as f:
+                # 转换为可序列化格式（去除tensor）
+                performance = self.anomaly_ensemble.get_performance_summary()
+                json.dump(performance, f)
+        
+        # 保存当前使用的检测方法和融合模式
+        config_path = os.path.join(detector_dir, "detector_config.json")
+        with open(config_path, "w") as f:
+            json.dump({
+                "current_method": self.current_method,
+                "enable_ensemble": self.enable_ensemble
+            }, f)
+        
+        print(f"异常检测器特征内存和配置已保存至 {detector_dir}")
+    
+    @classmethod
+    def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
+        """
+        从预训练文件加载模型权重及异常检测器特征内存
+        
+        参数:
+            pretrained_model_name_or_path: 预训练模型路径或名称
+            *model_args: 传递给父类from_pretrained的位置参数
+            **kwargs: 传递给父类from_pretrained的关键字参数
+            
+        返回:
+            model: 加载了权重和特征内存的模型
+        """
+        # 调用父类的from_pretrained方法加载模型权重
+        model = super().from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
+        
+        # 检查是否存在检测器目录
+        detector_dir = os.path.join(pretrained_model_name_or_path, "detectors")
+        if not os.path.exists(detector_dir):
+            print(f"未找到检测器特征目录: {detector_dir}，将使用空特征内存")
+            return model
+        
+        # 加载检测方法配置
+        config_path = os.path.join(detector_dir, "detector_config.json")
+        if os.path.exists(config_path):
+            with open(config_path, "r") as f:
+                config = json.load(f)
+                model.current_method = config.get("current_method", "knn")
+                model.enable_ensemble = config.get("enable_ensemble", True)
+        
+        # 加载各个检测器的特征内存
+        for method, detector in model.anomaly_methods.items():
+            feature_path = os.path.join(detector_dir, f"{method}_features.npy")
+            if os.path.exists(feature_path):
+                try:
+                    # 加载特征内存
+                    detector.memory_features = np.load(feature_path)
+                    
+                    # 加载检测器参数
+                    param_path = os.path.join(detector_dir, f"{method}_params.json")
+                    if os.path.exists(param_path):
+                        with open(param_path, "r") as f:
+                            params = json.load(f)
+                            for param_name, param_value in params.items():
+                                if hasattr(detector, param_name):
+                                    setattr(detector, param_name, param_value)
+                    
+                    # 重新拟合检测器
+                    if detector.memory_features is not None and len(detector.memory_features) >= 10:
+                        detector.fit(force=True)
+                        print(f"检测器 {method} 已加载 {len(detector.memory_features)} 个特征样本并重新拟合")
+                    else:
+                        print(f"检测器 {method} 的特征样本数量不足，跳过拟合")
+                
+                except Exception as e:
+                    print(f"加载检测器 {method} 的特征内存时出错: {e}")
+            else:
+                print(f"未找到检测器 {method} 的特征内存文件")
+        
+        print(f"异常检测器特征内存和配置已从 {detector_dir} 加载")
+        return model
 
 
-def create_tiny_log_bert():
+def create_tiny_log_bert(model_dir=None):
     """创建一个小型的BERT模型用于日志分析"""
-    config = BertConfig.from_pretrained(
-        "prajjwal1/bert-mini",
-        hidden_dropout_prob=0.1,
-        attention_probs_dropout_prob=0.1,
-    )
-    model = TinyLogBERT.from_pretrained("prajjwal1/bert-mini", config=config)
+    if model_dir is None:
+        config = BertConfig.from_pretrained(
+            "prajjwal1/bert-mini",
+            hidden_dropout_prob=0.1,
+            attention_probs_dropout_prob=0.1,
+        )
+        model = TinyLogBERT.from_pretrained("prajjwal1/bert-mini", config=config)
+    else:
+        config = BertConfig.from_pretrained(model_dir)
+        model = TinyLogBERT.from_pretrained(model_dir, config=config)
     return model 

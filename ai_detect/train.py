@@ -1,14 +1,16 @@
 import os
+import sys
 import argparse
 import logging
 import time
 import random
 import json
 
-from anomaly_detector import AnomalyDetector
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from app.models.anomaly_detector import AnomalyDetector
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CHECKPOINT_DIR = os.path.join(ROOT_DIR, "checkpoint")
+MODEL_DIR = os.path.join(ROOT_DIR, "ai_detect", "checkpoint")
 OUTPUT_DIR = os.path.join(ROOT_DIR, "ai_detect", "output")
 
 
@@ -140,7 +142,7 @@ def parse_args():
                         help="训练数据文件路径")
     parser.add_argument("--eval_file", type=str, default=None,
                         help="评估数据文件路径（可选）")
-    parser.add_argument("--model_dir", type=str, default=CHECKPOINT_DIR,
+    parser.add_argument("--model_dir", type=str, default=MODEL_DIR,
                         help="模型保存目录")
     parser.add_argument("--output_dir", type=str, default=OUTPUT_DIR,
                         help="输出结果目录")
@@ -267,7 +269,7 @@ def main():
     
     try:
         # 训练模型
-        model_path = detector.train(
+        detector.train(
             train_file=train_file,
             eval_file=eval_file,
             num_epochs=args.num_epochs,
@@ -280,8 +282,6 @@ def main():
             fusion_method=args.fusion_method
         )
         
-        logging.info(f"模型训练完成，已保存到: {model_path}")
-        
         # 进行评估（如果有评估数据）
         if eval_file is not None:
             logging.info("对训练好的模型进行评估...")
@@ -293,40 +293,40 @@ def main():
                 eval_methods = [m for m in detector.DETECTION_METHODS if m != 'ensemble']
                 logging.info(f"将评估所有检测方法: {', '.join(eval_methods)}")
             
-            # 进行评估
-            eval_results = detector.evaluate(
-                test_file=eval_file, 
-                model_path=model_path,
-                eval_methods=eval_methods,
-                eval_ensemble=not args.not_eval_ensemble
-            )
+            # # 进行评估
+            # eval_results = detector.evaluate(
+            #     test_file=eval_file, 
+            #     model_dir=args.model_dir,
+            #     eval_methods=eval_methods,
+            #     eval_ensemble=not args.not_eval_ensemble
+            # )
             
-            # 输出评估结果
-            logging.info(f"评估结果：")
-            logging.info(f"  主方法 ({eval_results.get('detection_method', args.detection_method)}) AUC: {eval_results['auc']:.4f}")
-            logging.info(f"  准确率: {eval_results['accuracy']:.4f}")
+            # # 输出评估结果
+            # logging.info(f"评估结果：")
+            # logging.info(f"  主方法 ({eval_results.get('detection_method', args.detection_method)}) AUC: {eval_results['auc']:.4f}")
+            # logging.info(f"  准确率: {eval_results['accuracy']:.4f}")
             
-            # 如果评估了多个方法，输出所有方法的AUC
-            if 'all_methods' in eval_results:
-                logging.info("  各方法AUC值:")
-                # 按AUC值排序
-                sorted_methods = sorted(eval_results['all_methods'].items(), key=lambda x: x[1], reverse=True)
-                for method, auc in sorted_methods:
-                    logging.info(f"    {method}: {auc:.4f}")
+            # # 如果评估了多个方法，输出所有方法的AUC
+            # if 'all_methods' in eval_results:
+            #     logging.info("  各方法AUC值:")
+            #     # 按AUC值排序
+            #     sorted_methods = sorted(eval_results['all_methods'].items(), key=lambda x: x[1], reverse=True)
+            #     for method, auc in sorted_methods:
+            #         logging.info(f"    {method}: {auc:.4f}")
             
-            # 如果使用了融合方法，输出融合器的性能摘要
-            if 'ensemble' in eval_results.get('all_methods', {}) and 'ensemble_summary' in eval_results:
-                summary = eval_results['ensemble_summary']
-                if 'detector_weights' in summary:
-                    logging.info("  融合器权重:")
-                    for method, weight in summary['detector_weights'].items():
-                        logging.info(f"    {method}: {weight:.4f}")
+            # # 如果使用了融合方法，输出融合器的性能摘要
+            # if 'ensemble' in eval_results.get('all_methods', {}) and 'ensemble_summary' in eval_results:
+            #     summary = eval_results['ensemble_summary']
+            #     if 'detector_weights' in summary:
+            #         logging.info("  融合器权重:")
+            #         for method, weight in summary['detector_weights'].items():
+            #             logging.info(f"    {method}: {weight:.4f}")
             
-            # 保存评估结果摘要
-            results_summary_path = os.path.join(args.output_dir, "eval_results.json")
-            with open(results_summary_path, 'w') as f:
-                json.dump(eval_results, f, indent=2)
-            logging.info(f"评估结果已保存到: {results_summary_path}")
+            # # 保存评估结果摘要
+            # results_summary_path = os.path.join(args.output_dir, "eval_results.json")
+            # with open(results_summary_path, 'w') as f:
+            #     json.dump(eval_results, f, indent=2)
+            # logging.info(f"评估结果已保存到: {results_summary_path}")
         
         logging.info(f"训练耗时: {(time.time() - start_time) / 60:.2f} 分钟")
         

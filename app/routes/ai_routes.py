@@ -1,8 +1,14 @@
 from flask import Blueprint, request, jsonify
 import os
 import logging
+import sys
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from app.services.anomaly_score import get_anomaly_service, init_anomaly_service
-from ai_detect.anomaly_detector import AnomalyDetector
+from app.models.anomaly_detector import AnomalyDetector
+
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+MODEL_DIR = os.path.join(ROOT_DIR, 'ai_detect', 'checkpoint')
 
 # 创建蓝图
 ai_bp = Blueprint('ai', __name__, url_prefix='/ai')
@@ -20,19 +26,19 @@ def setup_ai_services():
     global detector
     
     # 默认模型路径
-    model_path = os.environ.get('AI_MODEL_PATH', './ai_detect/checkpoint/model.pt')
+    model_dir = os.environ.get('AI_MODEL_PATH', MODEL_DIR)
     
     # 检查模型是否存在
-    if os.path.exists(model_path):
+    if os.path.exists(model_dir):
         # 初始化异常评分服务
-        init_anomaly_service(model_path=model_path)
-        logger.info(f"异常评分服务已初始化，使用模型: {model_path}")
+        init_anomaly_service(model_dir=model_dir)
+        logger.info(f"异常评分服务已初始化，使用模型: {model_dir}")
         
         # 初始化检测器
         detector = AnomalyDetector()
         logger.info("AI检测器已初始化")
     else:
-        logger.warning(f"模型文件不存在: {model_path}")
+        logger.warning(f"模型文件不存在: {model_dir}")
 
 
 @ai_bp.route('/score_log', methods=['POST'])

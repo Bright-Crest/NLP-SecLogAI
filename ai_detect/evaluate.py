@@ -1,9 +1,12 @@
 import os
+import sys
 import argparse
 import logging
 import json
 import time
-from anomaly_detector import AnomalyDetector
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from app.models.anomaly_detector import AnomalyDetector
 
 
 def setup_logging(output_dir):
@@ -96,7 +99,7 @@ def main():
                 
         results = detector.evaluate(
             test_file=args.test_file,
-            model_path=args.model_path,
+            model_dir=args.model_path,
             threshold=args.threshold,
             eval_methods=eval_methods
         )

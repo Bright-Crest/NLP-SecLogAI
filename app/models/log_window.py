@@ -2,8 +2,8 @@ import torch
 import os
 import sys
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from app.services.log_tokenizer import LogTokenizer
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from app.models.log_tokenizer import LogTokenizer
 
 
 class LogWindow:

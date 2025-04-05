@@ -9,15 +9,17 @@ from transformers.trainer_callback import EarlyStoppingCallback
 from torch.utils.data import Dataset
 import json
 import random
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CHECKPOINT_DIR = os.path.join(ROOT_DIR, "checkpoint")
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+MODEL_DIR = os.path.join(ROOT_DIR, "ai_detect", "checkpoint")
 OUTPUT_DIR = os.path.join(ROOT_DIR, "ai_detect", "output")
 
 sys.path.append(ROOT_DIR)
 from app.models.tinylogbert import create_tiny_log_bert
-from ai_detect.log_window import LogWindow
-from app.services.evaluate import evaluate_scores, visualize_results, find_best_threshold
+from app.models.log_window import LogWindow
+from ai_detect.core.supervised_evaluator import evaluate_scores, visualize_results, find_best_threshold
 from app.models.tinylogbert import AnomalyScoreEnsemble
 
 # 设置日志
@@ -106,7 +108,7 @@ class AnomalyDetector:
     DETECTION_METHODS = ['knn', 'cluster', 'lof', 'iforest', 'reconstruction', 'ensemble']
     
     def __init__(self, 
-                 model_dir=CHECKPOINT_DIR,
+                 model_dir=MODEL_DIR,
                  output_dir=OUTPUT_DIR,
                  tokenizer_name="prajjwal1/bert-mini",
                  window_size=10,
@@ -433,46 +435,78 @@ class AnomalyDetector:
         else:
             logging.info("保存最终模型...")
         
-        # 保存模型
-        model_path = os.path.join(self.model_dir, "model.pt")
-        torch.save(self.model.state_dict(), model_path)
-        logging.info(f"模型已保存到: {model_path}")
-        
-        # 同时保存tokenizer
-        self.tokenizer.save_pretrained(os.path.join(self.model_dir, "tokenizer"))
-        
         # 为无监督检测器收集特征
         if collect_features:
             self._collect_features_for_detector(train_dataset, batch_size)
         
-        return model_path
+        # 保存模型
+        self.model.save_pretrained(self.model_dir)
+        logging.info(f"模型已保存到: {self.model_dir}")
+        
+        # 同时保存tokenizer
+        self.tokenizer.save_pretrained(os.path.join(self.model_dir, "tokenizer"))
     
     def _collect_features_for_detector(self, train_dataset, batch_size=32):
-        """收集特征用于无监督检测器"""
-        logging.info(f"开始收集特征用于{self.detection_method}检测器...")
+        """收集特征用于拟合无监督检测器"""
+        logging.info("开始收集特征用于拟合无监督检测器...")
         
         # 确保模型在评估模式
         self.model.eval()
         
+        # 如果检测方法是ensemble，需要为所有单一方法收集特征
+        detector_methods = []
+        if self.detection_method == 'ensemble':
+            # 使用所有单一检测方法，排除ensemble
+            detector_methods = [m for m in self.DETECTION_METHODS if m != 'ensemble' and m != 'reconstruction']
+            logging.info(f"ensemble模式下将为以下检测器收集特征: {', '.join(detector_methods)}")
+        else:
+            # 只为当前方法收集特征
+            detector_methods = [self.detection_method] if self.detection_method != 'reconstruction' else []
+        
+        # 如果没有需要收集特征的检测器，直接返回
+        if not detector_methods:
+            logging.info(f"检测方法 {self.detection_method} 不需要收集特征")
+            return
+            
         # 创建数据加载器
         from torch.utils.data import DataLoader
-        dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        try:
+            from tqdm import tqdm
+        except ImportError:
+            # 如果没有tqdm，使用简单的计数器
+            tqdm = lambda x, desc: x
+        
+        # 准备数据整理器，用于批处理
+        data_collator = DataCollatorForLanguageModeling(
+            tokenizer=self.tokenizer,
+            mlm=True,
+            mlm_probability=0.15
+        )
+        
+        dataloader = DataLoader(
+            train_dataset, 
+            batch_size=batch_size, 
+            shuffle=True,
+            collate_fn=data_collator
+        )
         
         # 限制收集的样本数，避免内存问题
         max_samples = 10000
         collected_count = 0
         
         with torch.no_grad():
-            for batch in dataloader:
+            for batch in tqdm(dataloader, desc="收集特征"):
                 if collected_count >= max_samples:
                     break
                 
                 # 处理批次数据
-                batch = {k: v.to(self.device) for k, v in batch.items() if k in ['input_ids', 'attention_mask']}
+                # 只保留模型需要的输入
+                model_inputs = {k: v.to(self.device) for k, v in batch.items() 
+                              if k in ['input_ids', 'attention_mask']}
                 
                 # 获取特征
                 outputs = self.model(
-                    **batch,
+                    **model_inputs,
                     training_phase=False,  # 标记为非训练阶段
                     update_memory=True  # 更新记忆库
                 )
@@ -484,16 +518,23 @@ class AnomalyDetector:
                 if collected_count % 1000 == 0:
                     logging.info(f"已收集 {collected_count} 个样本特征")
         
-        # 拟合检测器
-        detector = self.model.anomaly_methods[self.detection_method]
-        success = detector.fit(force=True)
+        logging.info(f"共收集了 {collected_count} 个样本特征")
         
-        if success:
-            logging.info(f"成功使用 {collected_count} 个样本特征拟合{self.detection_method}检测器")
-        else:
-            logging.warning(f"拟合{self.detection_method}检测器失败，异常检测可能不准确")
+        # 拟合检测器
+        for method in detector_methods:
+            if method not in self.model.anomaly_methods:
+                logging.warning(f"检测方法 {method} 不在模型的anomaly_methods中，跳过")
+                continue
+                
+            detector = self.model.anomaly_methods[method]
+            success = detector.fit(force=True)
+            
+            if success:
+                logging.info(f"成功使用 {collected_count} 个样本特征拟合 {method} 检测器")
+            else:
+                logging.warning(f"拟合 {method} 检测器失败，异常检测可能不准确")
     
-    def evaluate(self, test_file, model_path=None, threshold=None, eval_methods=None, eval_ensemble=True):
+    def evaluate(self, test_file, model_dir=None, threshold=None, eval_methods=None, eval_ensemble=True, no_labels=True):
         """
         评估模型性能
         
@@ -508,9 +549,8 @@ class AnomalyDetector:
             results: 评估结果字典
         """
         # 加载模型
-        if model_path and os.path.exists(model_path):
-            self.model = create_tiny_log_bert()
-            self.model.load_state_dict(torch.load(model_path, map_location=self.device))
+        if model_dir and os.path.exists(model_dir):
+            self.model = create_tiny_log_bert(model_dir)
             self.model.to(self.device)
             self.model.eval()
         elif self.model is None:
@@ -533,180 +573,185 @@ class AnomalyDetector:
             logging.warning(f"部分指定的方法无效，有效方法: {valid_methods}")
         eval_methods = valid_methods
         
-        # 加载测试数据（格式：{"text": "日志内容", "label": 0或1}）
-        test_data = []
-        with open(test_file, 'r', encoding='utf-8') as f:
-            for line in f:
-                try:
-                    item = json.loads(line.strip())
-                    test_data.append(item)
-                except:
-                    continue
-        
-        logging.info(f"加载测试数据: {len(test_data)} 条")
-        
-        # 准备数据
-        texts = [item['text'] for item in test_data]
-        labels = [item['label'] for item in test_data]
-        
-        # 评估结果字典
-        all_results = {}
-        
-        # 获取预测特征和各种分数
-        features = []
-        method_scores = {method: [] for method in eval_methods}
-        contrastive_distances = []
-        reconstruction_errors = []
-        all_method_details = {}  # 存储每个样本所有方法的分数
-        
-        for text in texts:
-            # 单条日志评分
-            log_tokens = self.window.log_tokenizer.tokenize(text)
-            input_ids = log_tokens['input_ids'].to(self.device)
-            attention_mask = log_tokens['attention_mask'].to(self.device)
+        if not no_labels:
+            # 加载测试数据（格式：{"text": "日志内容", "label": 0或1}）
+            test_data = []
+            with open(test_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    try:
+                        item = json.loads(line.strip())
+                        test_data.append(item)
+                    except:
+                        continue
             
-            # 样本所有方法的分数
-            sample_method_scores = {}
-            sample_method_weights = None
+            logging.info(f"加载测试数据: {len(test_data)} 条")
             
-            # 对每个评估方法进行评分
-            for i, method in enumerate(eval_methods):
-                if method == 'ensemble':
-                    # 确保模型启用融合模式
-                    self.model.enable_ensemble = True
-                else:
-                    # 使用指定的单一方法
-                    self.model.enable_ensemble = False
-                    self.model.set_detection_method(method)
+            # 准备数据
+            texts = [item['text'] for item in test_data]
+            labels = [item['label'] for item in test_data]
+            
+            # 评估结果字典
+            all_results = {}
+            
+            # 获取预测特征和各种分数
+            features = []
+            method_scores = {method: [] for method in eval_methods}
+            contrastive_distances = []
+            reconstruction_errors = []
+            all_method_details = {}  # 存储每个样本所有方法的分数
+            
+            for text in texts:
+                # 单条日志评分
+                log_tokens = self.window.log_tokenizer.tokenize(text)
+                input_ids = log_tokens['input_ids'].to(self.device)
+                attention_mask = log_tokens['attention_mask'].to(self.device)
                 
-                with torch.no_grad():
-                    outputs = self.model(
-                        input_ids=input_ids, 
-                        attention_mask=attention_mask,
-                        training_phase=False,
-                        update_memory=False
-                    )
+                # 样本所有方法的分数
+                sample_method_scores = {}
+                sample_method_weights = None
+                
+                # 对每个评估方法进行评分
+                for i, method in enumerate(eval_methods):
+                    if method == 'ensemble':
+                        # 确保模型启用融合模式
+                        self.model.enable_ensemble = True
+                    else:
+                        # 使用指定的单一方法
+                        self.model.enable_ensemble = False
+                        self.model.set_detection_method(method)
                     
-                    # 收集相关分数和特征
-                    method_scores[method].append(outputs['anomaly_score'].item())
-                    
-                    # 只在第一个方法时收集通用特征
-                    if i == 0:
-                        features.append(outputs['cls_embedding'].cpu().numpy())
-                        contrastive_distances.append(outputs['contrastive_distances'].item())
-                        reconstruction_errors.append(outputs['reconstruction_error'].item())
-                    
-                    # 收集该样本所有方法的分数
-                    if 'method_scores' in outputs:
-                        for method_name, score in outputs['method_scores'].items():
-                            if method_name not in sample_method_scores:
-                                sample_method_scores[method_name] = []
-                            # 只保存单个样本的第一个分数（压缩维度）
-                            if isinstance(score, torch.Tensor) and score.numel() > 0:
-                                sample_method_scores[method_name].append(score[0].item())
-                            else:
-                                sample_method_scores[method_name].append(0.0)
-                    
-                    # 收集融合权重
-                    if method == 'ensemble' and 'method_weights' in outputs:
-                        sample_method_weights = outputs['method_weights'].cpu().numpy().tolist()
-            
-            # 保存样本的所有方法详情
-            all_method_details[len(all_method_details)] = {
-                'method_scores': sample_method_scores,
-                'method_weights': sample_method_weights
-            }
-        
-        # 记录各种评估结果
-        for method in eval_methods:
-            scores = method_scores[method]
-            
-            # 寻找最佳阈值（如果未提供）
-            if threshold is None:
-                method_threshold, f1 = find_best_threshold(scores, labels)
-                logging.info(f"方法 {method} 最佳阈值: {method_threshold:.4f}, F1: {f1:.4f}")
-            else:
-                method_threshold = threshold
-            
-            # 评估性能
-            auc = evaluate_scores(scores, labels, model_name=f"tinylogbert_{method}")
-            logging.info(f"方法 {method} AUC: {auc:.4f}")
-            
-            # 可视化结果（只对主方法可视化）
-            if method == self.detection_method:
-                visualize_results(scores, labels, np.vstack(features), model_name=f"tinylogbert_{method}")
-            
-            # 计算预测结果
-            predictions = [1 if s > method_threshold else 0 for s in scores]
-            accuracy = sum([1 for l, p in zip(labels, predictions) if l == p]) / len(labels)
-            
-            # 保存方法结果
-            all_results[method] = {
-                "auc": auc,
-                "threshold": method_threshold,
-                "accuracy": accuracy,
-                "predictions": predictions,
-                "scores": scores
-            }
-            
-            # 如果是融合方法，记录各检测器的贡献情况
-            if method == 'ensemble':
-                # 从模型中获取融合器的性能汇总
-                ensemble_summary = self.model.anomaly_ensemble.get_performance_summary()
-                all_results[method]['ensemble_summary'] = ensemble_summary
-        
-        # 评估对比距离和重构误差
-        if any(d > 0 for d in contrastive_distances):
-            contrastive_auc = evaluate_scores(contrastive_distances, labels, model_name="contrastive_distances")
-            logging.info(f"对比距离 AUC: {contrastive_auc:.4f}")
-            all_results["contrastive"] = {"auc": contrastive_auc}
-        
-        if any(e > 0 for e in reconstruction_errors):
-            recon_auc = evaluate_scores(reconstruction_errors, labels, model_name="reconstruction_errors")
-            logging.info(f"重构误差 AUC: {recon_auc:.4f}")
-            all_results["reconstruction_raw"] = {"auc": recon_auc}
-        
-        # 输出预测结果
-        main_method = self.detection_method
-        # 如果主方法不在评估结果中，使用第一个方法
-        if main_method not in all_results and eval_methods:
-            main_method = eval_methods[0]
-        
-        main_predictions = all_results[main_method]["predictions"]
-        main_scores = all_results[main_method]["scores"]
-        
-        with open(os.path.join(self.output_dir, "predictions.json"), 'w') as f:
-            for i, (text, label, score, pred, c_dist, r_err) in enumerate(zip(
-                texts, labels, main_scores, main_predictions, 
-                contrastive_distances, reconstruction_errors
-            )):
-                result = {
-                    "id": i,
-                    "text": text,
-                    "true_label": label,
-                    "score": float(score),
-                    "contrastive_distance": float(c_dist),
-                    "reconstruction_error": float(r_err),
-                    "predicted_label": pred,
-                    "correct": label == pred,
-                    # 添加所有方法的分数和细节
-                    "method_scores": {m: float(method_scores[m][i]) for m in eval_methods},
-                    "method_details": all_method_details.get(i, {})
+                    with torch.no_grad():
+                        outputs = self.model(
+                            input_ids=input_ids, 
+                            attention_mask=attention_mask,
+                            training_phase=False,
+                            update_memory=False
+                        )
+                        
+                        # 收集相关分数和特征
+                        method_scores[method].append(outputs['anomaly_score'].item())
+                        
+                        # 只在第一个方法时收集通用特征
+                        if i == 0:
+                            features.append(outputs['cls_embedding'].cpu().numpy())
+                            contrastive_distances.append(outputs['contrastive_distances'].item())
+                            reconstruction_errors.append(outputs['reconstruction_error'].item())
+                        
+                        # 收集该样本所有方法的分数
+                        if 'method_scores' in outputs:
+                            for method_name, score in outputs['method_scores'].items():
+                                if method_name not in sample_method_scores:
+                                    sample_method_scores[method_name] = []
+                                # 只保存单个样本的第一个分数（压缩维度）
+                                if isinstance(score, torch.Tensor) and score.numel() > 0:
+                                    sample_method_scores[method_name].append(score[0].item())
+                                else:
+                                    sample_method_scores[method_name].append(0.0)
+                        
+                        # 收集融合权重
+                        if method == 'ensemble' and 'method_weights' in outputs:
+                            sample_method_weights = outputs['method_weights'].cpu().numpy().tolist()
+                
+                # 保存样本的所有方法详情
+                all_method_details[len(all_method_details)] = {
+                    'method_scores': sample_method_scores,
+                    'method_weights': sample_method_weights
                 }
-                f.write(json.dumps(result) + '\n')
-        
-        # 添加通用结果信息
-        main_results = all_results[main_method]
-        main_results.update({
-            "num_samples": len(texts),
-            "num_anomalies": sum(labels),
-            "detection_method": main_method,
-            "all_methods": {m: all_results[m]["auc"] for m in eval_methods}
-        })
-        
-        return main_results
+            
+            # 记录各种评估结果
+            for method in eval_methods:
+                scores = method_scores[method]
+                
+                # 寻找最佳阈值（如果未提供）
+                if threshold is None:
+                    method_threshold, f1 = find_best_threshold(scores, labels)
+                    logging.info(f"方法 {method} 最佳阈值: {method_threshold:.4f}, F1: {f1:.4f}")
+                else:
+                    method_threshold = threshold
+                
+                # 评估性能
+                auc = evaluate_scores(scores, labels, model_name=f"tinylogbert_{method}")
+                logging.info(f"方法 {method} AUC: {auc:.4f}")
+                
+                # 可视化结果（只对主方法可视化）
+                if method == self.detection_method:
+                    visualize_results(scores, labels, np.vstack(features), model_name=f"tinylogbert_{method}")
+                
+                # 计算预测结果
+                predictions = [1 if s > method_threshold else 0 for s in scores]
+                accuracy = sum([1 for l, p in zip(labels, predictions) if l == p]) / len(labels)
+                
+                # 保存方法结果
+                all_results[method] = {
+                    "auc": auc,
+                    "threshold": method_threshold,
+                    "accuracy": accuracy,
+                    "predictions": predictions,
+                    "scores": scores
+                }
+                
+                # 如果是融合方法，记录各检测器的贡献情况
+                if method == 'ensemble':
+                    # 从模型中获取融合器的性能汇总
+                    ensemble_summary = self.model.anomaly_ensemble.get_performance_summary()
+                    all_results[method]['ensemble_summary'] = ensemble_summary
+            
+            # 评估对比距离和重构误差
+            if any(d > 0 for d in contrastive_distances):
+                contrastive_auc = evaluate_scores(contrastive_distances, labels, model_name="contrastive_distances")
+                logging.info(f"对比距离 AUC: {contrastive_auc:.4f}")
+                all_results["contrastive"] = {"auc": contrastive_auc}
+            
+            if any(e > 0 for e in reconstruction_errors):
+                recon_auc = evaluate_scores(reconstruction_errors, labels, model_name="reconstruction_errors")
+                logging.info(f"重构误差 AUC: {recon_auc:.4f}")
+                all_results["reconstruction_raw"] = {"auc": recon_auc}
+            
+            # 输出预测结果
+            main_method = self.detection_method
+            # 如果主方法不在评估结果中，使用第一个方法
+            if main_method not in all_results and eval_methods:
+                main_method = eval_methods[0]
+            
+            main_predictions = all_results[main_method]["predictions"]
+            main_scores = all_results[main_method]["scores"]
+            
+            with open(os.path.join(self.output_dir, "predictions.json"), 'w') as f:
+                for i, (text, label, score, pred, c_dist, r_err) in enumerate(zip(
+                    texts, labels, main_scores, main_predictions, 
+                    contrastive_distances, reconstruction_errors
+                )):
+                    result = {
+                        "id": i,
+                        "text": text,
+                        "true_label": label,
+                        "score": float(score),
+                        "contrastive_distance": float(c_dist),
+                        "reconstruction_error": float(r_err),
+                        "predicted_label": pred,
+                        "correct": label == pred,
+                        # 添加所有方法的分数和细节
+                        "method_scores": {m: float(method_scores[m][i]) for m in eval_methods},
+                        "method_details": all_method_details.get(i, {})
+                    }
+                    f.write(json.dumps(result) + '\n')
+            
+            # 添加通用结果信息
+            main_results = all_results[main_method]
+            main_results.update({
+                "num_samples": len(texts),
+                "num_anomalies": sum(labels),
+                "detection_method": main_method,
+                "all_methods": {m: all_results[m]["auc"] for m in eval_methods}
+            })
+            
+            return main_results
     
-    def detect(self, log_text, model_path=None, threshold=0.5, method=None):
+        else:
+            logging.warning("NotImplementedError: 待实现无监督方法")
+            return {}
+
+    def detect(self, log_text, model_dir=None, threshold=0.5, method=None):
         """
         检测单条日志是否异常
         
@@ -720,9 +765,8 @@ class AnomalyDetector:
             result: 检测结果字典
         """
         # 加载模型（如果需要）
-        if self.model is None and model_path:
-            self.model = create_tiny_log_bert()
-            self.model.load_state_dict(torch.load(model_path, map_location=self.device))
+        if self.model is None and model_dir:
+            self.model = create_tiny_log_bert(model_dir)
             self.model.to(self.device)
             self.model.eval()
         elif self.model is None:
@@ -792,7 +836,7 @@ class AnomalyDetector:
             "method_weights": method_weights
         }
     
-    def detect_sequence(self, log_list, model_path=None, window_type='sliding', stride=1, threshold=0.5, method=None):
+    def detect_sequence(self, log_list, model_dir=None, window_type='sliding', stride=1, threshold=0.5, method=None):
         """
         检测日志序列中的异常
         
@@ -808,9 +852,8 @@ class AnomalyDetector:
             results: 检测结果列表
         """
         # 加载模型（如果需要）
-        if self.model is None and model_path:
-            self.model = create_tiny_log_bert()
-            self.model.load_state_dict(torch.load(model_path, map_location=self.device))
+        if self.model is None and model_dir:
+            self.model = create_tiny_log_bert(model_dir)
             self.model.to(self.device)
             self.model.eval()
         elif self.model is None:

@@ -1,11 +1,14 @@
 import torch
 import numpy as np
-from app.models.tinylogbert import create_tiny_log_bert
-from app.services.log_tokenizer import LogTokenizer
-from ai_detect.log_window import LogWindow
 import os
+import sys
 import logging
 from sklearn.neighbors import NearestNeighbors
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from app.models.tinylogbert import create_tiny_log_bert
+from app.models.log_tokenizer import LogTokenizer
+from app.models.log_window import LogWindow
 
 
 class AnomalyScoreService:
@@ -14,17 +17,17 @@ class AnomalyScoreService:
     支持单条日志评分和批量日志评分
     """
     
-    def __init__(self, model_path=None, window_size=10, tokenizer_name='prajjwal1/bert-mini'):
+    def __init__(self, model_dir=None, window_size=10, tokenizer_name='prajjwal1/bert-mini'):
         """
         初始化异常评分服务
         
         参数:
-            model_path: 预训练模型路径
+            model_dir: 预训练模型路径
             window_size: 窗口大小
             tokenizer_name: 使用的tokenizer名称
         """
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.model = self._load_model(model_path)
+        self.model = self._load_model(model_dir)
         self.window_size = window_size
         self.log_window = LogWindow(tokenizer_name=tokenizer_name, window_size=window_size)
         self.embeddings_bank = None  # 存储正常日志的embeddings用于KNN分析
@@ -33,16 +36,15 @@ class AnomalyScoreService:
         
         logging.info(f"异常评分服务初始化完成，使用设备: {self.device}")
     
-    def _load_model(self, model_path):
+    def _load_model(self, model_dir):
         """加载预训练模型"""
-        model = create_tiny_log_bert()
-        
-        if model_path and os.path.exists(model_path):
-            logging.info(f"从 {model_path} 加载模型")
-            model.load_state_dict(torch.load(model_path, map_location=self.device))
+        if model_dir and os.path.isdir(model_dir):
+            logging.info(f"从 {os.path.abspath(model_dir)} 加载模型")
+            model = create_tiny_log_bert(model_dir)
         else:
-            logging.warning("未提供有效的模型路径，使用未训练的模型")
-            
+            logging.warning(f"模型路径 {os.path.abspath(model_dir)} 不存在，使用未训练的模型")
+            model = create_tiny_log_bert()
+
         model.to(self.device)
         model.eval()
         return model
@@ -192,10 +194,10 @@ class AnomalyScoreService:
 # 全局实例，便于外部调用
 anomaly_service = None
 
-def init_anomaly_service(model_path=None, window_size=10):
+def init_anomaly_service(model_dir=None, window_size=10):
     """初始化异常评分服务"""
     global anomaly_service
-    anomaly_service = AnomalyScoreService(model_path, window_size)
+    anomaly_service = AnomalyScoreService(model_dir, window_size)
     return anomaly_service
 
 def get_anomaly_service():

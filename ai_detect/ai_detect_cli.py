@@ -4,8 +4,10 @@ import argparse
 import logging
 import json
 import sys
-from anomaly_detector import AnomalyDetector
 import time
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from app.models.anomaly_detector import AnomalyDetector
 
 
 def setup_logging(output_dir=None):
@@ -112,7 +114,7 @@ def main():
             logging.info("检测单条日志...")
             result = detector.detect(
                 log_text=logs[0],
-                model_path=args.model_path,
+                model_dir=args.model_path,
                 threshold=args.threshold
             )
             
@@ -128,7 +130,7 @@ def main():
             logging.info(f"使用 {args.window_type} 窗口检测 {len(logs)} 条日志...")
             result = detector.detect_sequence(
                 log_list=logs,
-                model_path=args.model_path,
+                model_dir=args.model_path,
                 window_type=args.window_type,
                 stride=args.stride,
                 threshold=args.threshold
