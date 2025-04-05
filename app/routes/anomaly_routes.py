@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify
-from app.services.anomaly_detector import SSHRuleDetector,WebLogDetector,FirewallDetector,MySQLDetector
+from app.services.anomaly_detector import SSHRuleDetector,WebLogDetector,FirewallDetector,MySQLDetector,HDFSAnomalyDetector
 from app.models.db import get_db
 
 anomaly_bp = Blueprint("anomalies", __name__)
@@ -115,3 +115,34 @@ def detect_mysql_anomalies():
             anomaly["reason"]
         ))
     return jsonify({"mysql_anomalies": anomalies})
+
+
+@anomaly_bp.route("/detect/hdfs", methods=["GET"])
+def detect_HDFS_anomalies():
+    detector = HDFSAnomalyDetector()
+    
+    # 执行所有检测规则
+    brute_force = detector.detect_service_brute_force()
+    abnormal_deletions = detector.detect_abnormal_deletions()
+    transmission_failures = detector.detect_transmission_failures()          
+    anomalies = brute_force + abnormal_deletions+transmission_failures
+    
+    # 存储到数据库
+    conn = get_db()
+    cursor = conn.cursor()
+    for anomaly in anomalies:
+        cursor.execute("""
+            INSERT INTO hdfs_anomalies 
+            (timestamp, pid, anomaly_type, details)
+            VALUES (datetime('now'), ?, ?, ?)
+        """, (
+            anomaly["pid"],
+            anomaly["type"],
+            anomaly["reason"]
+        ))
+    conn.commit()
+    
+    return jsonify({
+        "hdfs_anomalies": anomalies,
+        "count": len(anomalies)
+    })

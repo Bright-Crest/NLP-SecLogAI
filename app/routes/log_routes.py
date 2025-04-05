@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from app.services.log_parser import SSHLogParser,WebLogParser,IptablesLogParser,MySQLLogParser
+from app.services.log_parser import SSHLogParser,WebLogParser,IptablesLogParser,MySQLLogParser,HDFSLogParser,LINUXLogParser
 from app.models.db import get_db
 
 log_bp = Blueprint("logs", __name__)
@@ -26,6 +26,14 @@ def upload_log():
         parsed_log = MySQLLogParser.parse(log_line)
         if not parsed_log:
             return jsonify({"status": "error", "message": "Invalid MYSQL log format"}), 400
+    elif log_type == "hdfs":
+        parsed_log = HDFSLogParser().parse(log_line)
+        if not parsed_log:
+            return jsonify({"status": "error", "message": "Invalid HDFS log format"}), 400
+    elif log_type == "linux":
+        parsed_log = LINUXLogParser().parse(log_line)
+        if not parsed_log:
+            return jsonify({"status": "error", "message": "Invalid LINUX log format"}), 400
     else:
         return jsonify({"status": "error", "message": "Unsupported log type"}), 400
     
@@ -91,6 +99,35 @@ def upload_log():
             parsed_log["sql_statement"],
             parsed_log["duration"]
         )) 
+    elif log_type == "hdfs":
+        cursor.execute("""
+            INSERT INTO hdfs_logs (
+                timestamp, pid, level, 
+                component, content, Eventid
+            ) VALUES (?, ?, ?, ?, ?, ?)
+        """, (
+            parsed_log["timestamp"],
+            parsed_log["pid"],
+            parsed_log.get("level"),
+            parsed_log.get("component"),
+            parsed_log.get("content"),
+            parsed_log.get("type")
+        ))
+    elif log_type == "linux":
+        cursor.execute("""
+            INSERT INTO linux_logs (
+                month,date,time,level,          
+                component,pid,content 
+            # ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            parsed_log.get("month"),
+            parsed_log.get("date"),
+            parsed_log.get("time"),
+            parsed_log.get("level"),
+            parsed_log.get("component"),
+            parsed_log.get("pid"),
+            parsed_log.get("content")
+        ))
     conn.commit()
     
     return jsonify({"status": "success"})
