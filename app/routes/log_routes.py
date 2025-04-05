@@ -56,7 +56,37 @@ def upload_hdfs_log():
         parsed_log.get("level"),
         parsed_log.get("component"),
         parsed_log.get("content"),
-        parsed_log.get("type"),
+        parsed_log.get("type")
+    ))
+    conn.commit()
+    
+    return jsonify({"status": "success"})
+
+@log_bp.route("/upload/linux", methods=["POST"])
+def upload_ssh_log():
+    data = request.json
+    log_line = data.get("log_content")
+    
+    parsed_log = SSHLogParser.parse(log_line)
+    if not parsed_log:
+        return jsonify({"status": "error", "message": "Invalid LINUX log format"}), 400
+    
+    # 存储到数据库
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO linux_logs (
+            month,date,time,level,          
+            component,pid,content 
+        # ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (
+        parsed_log.get("month"),
+        parsed_log.get("date"),
+        parsed_log.get("time"),
+        parsed_log.get("level"),
+        parsed_log.get("component"),
+        parsed_log.get("pid"),
+        parsed_log.get("content")
     ))
     conn.commit()
     

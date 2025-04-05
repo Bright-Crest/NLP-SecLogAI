@@ -152,24 +152,17 @@ class LINUXLogParser:
             r"(?P<level>\w+)\s+"                       # 日志级别
             r"(?P<component>sshd\(\w+\))\s+"           # 组件（包含pam模块）
             r"\[(?P<pid>\d+)\]:\s+"                    # 进程ID
-            r"(?P<message>.*)"                         # 日志内容
+            r"(?P<content>.*)"                         # 日志内容
         )
         
         match = re.match(pattern, log_line)
         if not match:
             return None
             
-        log_data = match.groupdict()
-        
-        # 补充年份信息
-        log_data["timestamp"] = datetime.strptime(
-            f"{datetime.now().year} {log_data['month']} {log_data['day']} {log_data['time']}",
-            "%Y %b %d %H:%M:%S"
-        )
-        
+        log_data = match.groupdict()        
         # 解析日志内容
-        content_parser = SSHLogParser._parse_message(log_data["message"])
-        return {**log_data, **content_parser}
+        content_parser = LINUXLogParser._parse_message(log_data["content"])
+        return {**log_data,**content_parser}
  
     @staticmethod
     def _parse_message(message):

@@ -60,7 +60,9 @@ def init_db():
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS linux_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        month TEXT,
+        date INTEGER,
+        time TEXT,
         level TEXT NOT NULL,           -- 日志级别           
         component TEXT NOT NULL,       -- 日志组件
         pid INTEGER,
@@ -73,7 +75,8 @@ def init_db():
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
         component TEXT NOT NULL,       -- 日志组件
         pid INTEGER,                   -- 关联进程ID
-        anomaly_type TEXT NOT NULL,    -- 异常类型（如：权限异常、频繁错误等）
+        detected TEXT NOT NULL,     --标记是否为AI检测
+        anomaly_type TEXT ,    -- 异常类型（如：权限异常、频繁错误等）
         details TEXT         -- 异常详情（包含原始日志ID和内容片段）
     )""")
  

@@ -184,4 +184,12 @@ class HDFSAnomalyDetector:
             "pid": row["pid"],
             "reason": f"传输失败：5分钟内传输失败{row['fail_count']}次"
         } for row in cursor.fetchall()]
+
+class LINUXAIDetector:
+    def __init__(self):
+        self.conn = get_db()
+
  
+class LINUXRuleDetector:
+    def __init__(self):
+        self.conn = get_db()
