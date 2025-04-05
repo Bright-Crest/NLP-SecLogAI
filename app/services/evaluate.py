@@ -6,13 +6,17 @@ import pandas as pd
 import os
 import json
 
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+EVALUATION_DIR = os.path.join(ROOT_DIR, "ai_detect", "output", "evaluation")
+
+
 class EvaluationService:
     """
     评估无盒标日志异常检测效果的服务
     支持ROC-AUC分析、分数分布、t-SNE可视化等
     """
     
-    def __init__(self, results_dir="./evaluation_results"):
+    def __init__(self, results_dir=EVALUATION_DIR):
         """
         初始化评估服务
         params:

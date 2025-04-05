@@ -1,105 +1,206 @@
 import torch
-from transformers import BertModel, BertTokenizer
-from app.models.tinylogbert_model import TinyLogBERT
+import numpy as np
+from app.models.tinylogbert import create_tiny_log_bert
+from app.services.log_tokenizer import LogTokenizer
+from ai_detect.log_window import LogWindow
 import os
-
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DEFAULT_MODEL_PATH = os.path.join(ROOT_DIR, "ai_detect", "checkpoint", "tiny_model.pt")
+import logging
+from sklearn.neighbors import NearestNeighbors
 
 
 class AnomalyScoreService:
-    def __init__(self):
-        self.model = None
-        self.tokenizer = None
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.threshold = 0.5  # 默认阈值，可根据模型实际情况调整
-
-    def load_model(self, model_path=DEFAULT_MODEL_PATH, tokenizer_name="bert-base-uncased"):
+    """
+    日志异常评分服务，提供基于预训练模型的异常检测功能
+    支持单条日志评分和批量日志评分
+    """
+    
+    def __init__(self, model_path=None, window_size=10, tokenizer_name='prajjwal1/bert-mini'):
         """
-        加载预训练的异常检测模型和分词器
+        初始化异常评分服务
+        
+        参数:
+            model_path: 预训练模型路径
+            window_size: 窗口大小
+            tokenizer_name: 使用的tokenizer名称
         """
-        try:
-            # 加载BERT-mini基础模型
-            base_model = BertModel.from_pretrained('prajjwal1/bert-mini')
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.model = self._load_model(model_path)
+        self.window_size = window_size
+        self.log_window = LogWindow(tokenizer_name=tokenizer_name, window_size=window_size)
+        self.embeddings_bank = None  # 存储正常日志的embeddings用于KNN分析
+        self.knn_model = None
+        self.threshold = 0.5  # 默认异常阈值
+        
+        logging.info(f"异常评分服务初始化完成，使用设备: {self.device}")
+    
+    def _load_model(self, model_path):
+        """加载预训练模型"""
+        model = create_tiny_log_bert()
+        
+        if model_path and os.path.exists(model_path):
+            logging.info(f"从 {model_path} 加载模型")
+            model.load_state_dict(torch.load(model_path, map_location=self.device))
+        else:
+            logging.warning("未提供有效的模型路径，使用未训练的模型")
             
-            # 创建TinyLogBERT模型
-            self.model = TinyLogBERT(base_model)
-            
-            # 如果模型文件存在，加载训练好的权重
-            if os.path.exists(model_path):
-                self.model.load_state_dict(torch.load(model_path, map_location=self.device))
-                print(f"成功加载模型: {model_path} 到 {self.device}")
-            else:
-                print(f"警告: 模型文件 {model_path} 不存在，使用未训练的模型")
-            
-            # 加载分词器
-            self.tokenizer = BertTokenizer.from_pretrained(tokenizer_name)
-            
-            # 将模型设置为评估模式
-            self.model.to(self.device)
-            self.model.eval()
-            
-            return True
-        except Exception as e:
-            print(f"模型加载失败: {str(e)}")
-            return False
-
-    def get_anomaly_score(self, log_text):
+        model.to(self.device)
+        model.eval()
+        return model
+    
+    def score_single_log(self, log_text):
         """
-        对给定的日志文本返回异常分数
-        返回: 0到1之间的分数，越高表示异常可能性越大
-        """
-        if self.model is None or self.tokenizer is None:
-            print("错误: 模型未加载")
-            return None
-
-        try:
-            # 预处理并分词
-            tokens = self.tokenizer(log_text, return_tensors="pt", truncation=True, padding=True)
-            
-            # 将tokens移动到正确的设备
-            input_ids = tokens['input_ids'].to(self.device)
-            attention_mask = tokens['attention_mask'].to(self.device)
-            
-            # 预测
-            with torch.no_grad():
-                score = self.model(input_ids=input_ids, attention_mask=attention_mask)
-            
-            # 将分数映射到0-1范围内（使用sigmoid）
-            score = torch.sigmoid(score).item()
-            return float(score)
-        except Exception as e:
-            print(f"预测异常分数失败: {str(e)}")
-            return None
-
-    def is_anomaly(self, log_text, custom_threshold=None):
-        """
-        判断给定的日志是否为异常
-        params:
+        对单条日志进行异常评分
+        
+        参数:
             log_text: 日志文本
-            custom_threshold: 自定义阈值，None则使用默认阈值
-        返回: (是否异常, 异常分数)
+            
+        返回:
+            score: 异常分数 (0-1之间，越大越异常)
         """
-        threshold = custom_threshold if custom_threshold is not None else self.threshold
-        score = self.get_anomaly_score(log_text)
+        # 将单条日志转换为token
+        log_tokens = self.log_window.log_tokenizer.tokenize(log_text)
         
-        if score is None:
-            return False, 0
+        # 将token转移到设备上
+        input_ids = log_tokens['input_ids'].to(self.device)
+        attention_mask = log_tokens['attention_mask'].to(self.device)
         
-        return score > threshold, score
+        # 执行推理
+        with torch.no_grad():
+            outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
+            score = outputs['anomaly_score'].item()
+            
+        return score
+    
+    def score_log_sequence(self, log_list, window_type='fixed', stride=1):
+        """
+        对日志序列进行异常评分
+        
+        参数:
+            log_list: 日志文本列表
+            window_type: 窗口类型 ('fixed' 或 'sliding')
+            stride: 滑动窗口的步长
+            
+        返回:
+            scores: 每个窗口的异常分数列表
+            avg_score: 平均异常分数
+            max_score: 最大异常分数
+        """
+        # 根据窗口类型处理日志序列
+        if window_type == 'fixed':
+            window_tokens, _ = self.log_window.create_fixed_windows(log_list)
+        else:  # sliding
+            window_tokens = self.log_window.create_sliding_windows(log_list, stride)
+        
+        if not window_tokens:
+            return [], 0.0, 0.0
+        
+        # 批量处理窗口
+        batch = self.log_window.batch_windows(window_tokens)
+        
+        if batch is None:
+            return [], 0.0, 0.0
+        
+        # 将batch移到设备上
+        batch = {k: v.to(self.device) for k, v in batch.items()}
+        
+        # 执行推理
+        scores = []
+        embeddings = []
+        
+        with torch.no_grad():
+            for i in range(batch['input_ids'].size(0)):
+                input_ids = batch['input_ids'][i:i+1]
+                attention_mask = batch['attention_mask'][i:i+1]
+                
+                outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
+                score = outputs['anomaly_score'].item()
+                scores.append(score)
+                
+                # 存储CLS embedding用于KNN分析
+                embeddings.append(outputs['cls_embedding'].cpu().numpy())
+        
+        # 计算KNN分数（如果已有嵌入库）
+        if self.knn_model is not None:
+            knn_scores = self._compute_knn_scores(embeddings)
+            # 融合两种分数（简单平均）
+            combined_scores = [(s + k) / 2 for s, k in zip(scores, knn_scores)]
+            scores = combined_scores
+            
+        avg_score = np.mean(scores) if scores else 0.0
+        max_score = np.max(scores) if scores else 0.0
+        
+        return scores, avg_score, max_score
+    
+    def is_anomaly(self, score):
+        """判断分数是否为异常"""
+        return score > self.threshold
+    
+    def build_embedding_bank(self, normal_log_windows):
+        """
+        构建正常日志的embedding库，用于KNN异常检测
+        
+        参数:
+            normal_log_windows: 正常日志窗口列表
+        """
+        embeddings = []
+        
+        for window in normal_log_windows:
+            batch = self.log_window.batch_windows([window])
+            if batch is None:
+                continue
+                
+            batch = {k: v.to(self.device) for k, v in batch.items()}
+            
+            with torch.no_grad():
+                outputs = self.model(input_ids=batch['input_ids'], attention_mask=batch['attention_mask'])
+                embeddings.append(outputs['cls_embedding'].cpu().numpy())
+        
+        if embeddings:
+            self.embeddings_bank = np.vstack(embeddings)
+            # 构建KNN模型
+            self.knn_model = NearestNeighbors(n_neighbors=5).fit(self.embeddings_bank)
+            logging.info(f"已构建包含 {len(self.embeddings_bank)} 条正常日志的embedding库")
+    
+    def _compute_knn_scores(self, embeddings):
+        """
+        计算KNN异常分数
+        
+        参数:
+            embeddings: 待评估的embedding列表
+            
+        返回:
+            scores: KNN异常分数列表
+        """
+        if self.knn_model is None:
+            return [0.0] * len(embeddings)
+            
+        embeddings = np.vstack(embeddings)
+        distances, _ = self.knn_model.kneighbors(embeddings)
+        # 将距离转换为分数（0-1之间）
+        mean_distances = np.mean(distances, axis=1)
+        max_dist = np.max(mean_distances) if len(mean_distances) > 0 else 1.0
+        scores = mean_distances / (max_dist + 1e-10)  # 归一化
+        
+        return scores
+    
+    def set_threshold(self, threshold):
+        """设置异常阈值"""
+        self.threshold = threshold
+        logging.info(f"异常阈值已设置为 {threshold}")
 
-# 单例服务实例
-anomaly_service = AnomalyScoreService()
 
-# 便于导入的函数
-def get_anomaly_score(log_text):
-    """便于外部调用的函数，获取日志的异常分数"""
-    if anomaly_service.model is None:
-        anomaly_service.load_model()
-    return anomaly_service.get_anomaly_score(log_text)
+# 全局实例，便于外部调用
+anomaly_service = None
 
-def is_log_anomaly(log_text, threshold=None):
-    """便于外部调用的函数，判断日志是否异常"""
-    if anomaly_service.model is None:
-        anomaly_service.load_model()
-    return anomaly_service.is_anomaly(log_text, threshold) 
+def init_anomaly_service(model_path=None, window_size=10):
+    """初始化异常评分服务"""
+    global anomaly_service
+    anomaly_service = AnomalyScoreService(model_path, window_size)
+    return anomaly_service
+
+def get_anomaly_service():
+    """获取异常评分服务实例"""
+    global anomaly_service
+    if anomaly_service is None:
+        anomaly_service = AnomalyScoreService()
+    return anomaly_service 
