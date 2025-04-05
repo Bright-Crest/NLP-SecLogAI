@@ -35,7 +35,7 @@ def setup_ai_services():
         logger.info(f"异常评分服务已初始化，使用模型: {model_dir}")
         
         # 初始化检测器
-        detector = AnomalyDetector()
+        detector = AnomalyDetector(tokenizer_name=MODEL_DIR)
         logger.info("AI检测器已初始化")
     else:
         logger.warning(f"模型文件不存在: {model_dir}")

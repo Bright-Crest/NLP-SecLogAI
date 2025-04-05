@@ -16,17 +16,60 @@ OUTPUT_DIR = os.path.join(ROOT_DIR, "ai_detect", "output")
 
 def setup_logging(output_dir):
     """设置日志配置"""
-    os.makedirs(output_dir, exist_ok=True)
-    log_file = os.path.join(output_dir, f"train_{time.strftime('%Y%m%d_%H%M%S')}.log")
-    
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_file),
-            logging.StreamHandler()
-        ]
-    )
+    try:
+        # 确保目录存在
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # 设置清晰的日志文件名
+        log_file = os.path.join(output_dir, f"train_{time.strftime('%Y%m%d_%H%M%S')}.log")
+        
+        # 尝试创建一个空的日志文件，检查写入权限
+        with open(log_file, 'w', encoding='utf-8') as f:
+            f.write(f"# 日志开始时间: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+        
+        # 检查文件是否被创建
+        if not os.path.exists(log_file):
+            print(f"警告: 无法创建日志文件 {log_file}")
+            return False
+            
+        # 配置根日志记录器
+        root_logger = logging.getLogger()
+        # 重置处理程序，避免重复
+        if root_logger.handlers:
+            for handler in root_logger.handlers[:]:
+                root_logger.removeHandler(handler)
+                
+        # 创建并配置文件处理程序
+        file_handler = logging.FileHandler(log_file, encoding='utf-8')
+        file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        file_handler.setFormatter(file_formatter)
+        file_handler.setLevel(logging.INFO)
+        
+        # 创建并配置控制台处理程序
+        console_handler = logging.StreamHandler()
+        console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        console_handler.setFormatter(console_formatter)
+        console_handler.setLevel(logging.INFO)
+        
+        # 添加处理程序到根日志记录器
+        root_logger.addHandler(file_handler)
+        root_logger.addHandler(console_handler)
+        root_logger.setLevel(logging.INFO)
+        
+        # 添加初始日志条目，确认日志系统已启动
+        logging.info(f"日志系统已初始化，日志文件: {log_file}")
+        
+        return True
+    except Exception as e:
+        print(f"设置日志系统时发生错误: {str(e)}")
+        # 设置基本的控制台日志以便继续运行
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            handlers=[logging.StreamHandler()]
+        )
+        logging.warning(f"无法设置文件日志，将只使用控制台日志: {str(e)}")
+        return False
 
 
 def split_logs_for_eval(log_file, eval_ratio=0.2, min_eval_lines=100):
@@ -156,7 +199,7 @@ def parse_args():
     # 训练参数
     parser.add_argument("--num_epochs", type=int, default=10,
                         help="训练轮次")
-    parser.add_argument("--batch_size", type=int, default=32,
+    parser.add_argument("--batch_size", type=int, default=64,
                         help="批次大小")
     parser.add_argument("--save_steps", type=int, default=200,
                         help="保存模型的步数间隔")
@@ -195,7 +238,18 @@ def main():
     args = parse_args()
     
     # 设置日志
-    setup_logging(args.output_dir)
+    logs_dir = os.path.join(args.output_dir, "logs")
+    logging_success = setup_logging(logs_dir)
+    
+    if not logging_success:
+        logging.warning(f"警告: 日志系统设置失败，将继续执行但日志可能不会被正确保存")
+    
+    # 确保输出目录存在
+    try:
+        os.makedirs(args.output_dir, exist_ok=True)
+    except Exception as e:
+        logging.error(f"创建输出目录失败: {str(e)}")
+        return
     
     # 记录参数
     logging.info("训练参数:")
@@ -293,41 +347,52 @@ def main():
                 eval_methods = [m for m in detector.DETECTION_METHODS if m != 'ensemble']
                 logging.info(f"将评估所有检测方法: {', '.join(eval_methods)}")
             
-            # # 进行评估
-            # eval_results = detector.evaluate(
-            #     test_file=eval_file, 
-            #     model_dir=args.model_dir,
-            #     eval_methods=eval_methods,
-            #     eval_ensemble=not args.not_eval_ensemble
-            # )
+            # 进行评估
+            eval_results = detector.evaluate(
+                test_file=eval_file, 
+                model_dir=args.model_dir,
+                eval_methods=eval_methods,
+                eval_ensemble=not args.not_eval_ensemble,
+                no_labels=True  # 使用无监督评估，即使可能有标签也以无标签方式评估
+            )
             
-            # # 输出评估结果
-            # logging.info(f"评估结果：")
-            # logging.info(f"  主方法 ({eval_results.get('detection_method', args.detection_method)}) AUC: {eval_results['auc']:.4f}")
-            # logging.info(f"  准确率: {eval_results['accuracy']:.4f}")
+            # 输出评估结果
+            logging.info(f"无监督评估结果:")
+            logging.info(f"  主方法: {eval_results.get('detection_method', args.detection_method)}")
+            logging.info(f"  推荐阈值: {eval_results.get('threshold', 0.0):.4f}")
+            logging.info(f"  样本数量: {eval_results.get('num_samples', 0)}")
+            logging.info(f"  可能异常样本数量: {eval_results.get('num_anomalies', 0)} ({eval_results.get('anomaly_ratio', 0.0)*100:.2f}%)")
             
-            # # 如果评估了多个方法，输出所有方法的AUC
-            # if 'all_methods' in eval_results:
-            #     logging.info("  各方法AUC值:")
-            #     # 按AUC值排序
-            #     sorted_methods = sorted(eval_results['all_methods'].items(), key=lambda x: x[1], reverse=True)
-            #     for method, auc in sorted_methods:
-            #         logging.info(f"    {method}: {auc:.4f}")
+            # 打印模型评估等级
+            if 'summary' in eval_results:
+                summary = eval_results['summary']
+                logging.info(f"  模型评估: {summary.get('grade', '未知')} (分数: {summary.get('score', 0)})")
+                logging.info(f"  评估摘要: {summary.get('summary', '无')}")
+                
+                # 打印评估因素
+                if 'factors' in summary and summary['factors']:
+                    logging.info("  评估因素:")
+                    for factor in summary['factors']:
+                        logging.info(f"    - {factor}")
             
-            # # 如果使用了融合方法，输出融合器的性能摘要
-            # if 'ensemble' in eval_results.get('all_methods', {}) and 'ensemble_summary' in eval_results:
-            #     summary = eval_results['ensemble_summary']
-            #     if 'detector_weights' in summary:
-            #         logging.info("  融合器权重:")
-            #         for method, weight in summary['detector_weights'].items():
-            #             logging.info(f"    {method}: {weight:.4f}")
+            # 打印建议
+            if 'suggestions' in eval_results and eval_results['suggestions']:
+                logging.info("  建议:")
+                for suggestion in eval_results['suggestions']:
+                    logging.info(f"    - {suggestion}")
             
-            # # 保存评估结果摘要
-            # results_summary_path = os.path.join(args.output_dir, "eval_results.json")
-            # with open(results_summary_path, 'w') as f:
-            #     json.dump(eval_results, f, indent=2)
-            # logging.info(f"评估结果已保存到: {results_summary_path}")
-        
+            # 如果评估了多个方法，输出所有方法的质量
+            if 'all_methods' in eval_results:
+                logging.info("  各方法评估:")
+                for method, quality in eval_results['all_methods'].items():
+                    logging.info(f"    {method}: {quality}")
+            
+            # 如果使用了融合方法，输出权重
+            if 'ensemble_weights' in eval_results:
+                logging.info("  融合器权重:")
+                for method, weight in eval_results['ensemble_weights'].items():
+                    logging.info(f"    {method}: {weight:.4f}")
+            
         logging.info(f"训练耗时: {(time.time() - start_time) / 60:.2f} 分钟")
         
     except Exception as e:

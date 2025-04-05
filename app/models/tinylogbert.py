@@ -1,5 +1,6 @@
 import torch
 import os
+import sys
 import json
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,6 +11,9 @@ import numpy as np
 from sklearn.neighbors import NearestNeighbors, LocalOutlierFactor
 from sklearn.ensemble import IsolationForest
 from sklearn.cluster import KMeans
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from app.models.weights_strategy import VarianceWeightStrategy
 
 
 class DynamicLossWeighting(nn.Module):
@@ -458,7 +462,34 @@ class AnomalyScoreEnsemble(nn.Module):
             ensemble_score = torch.mean(torch.stack(scores), dim=0)
             weights = torch.ones(self.num_detectors, device=self.device) / self.num_detectors
             
-        elif self.fusion_method in ['dynamic_weight', 'static_weight']:
+        elif self.fusion_method == 'dynamic_weight':
+            # 使用基于方差的权重策略计算动态权重
+            detector_scores_dict = {detector_names[i]: scores[i] for i in range(len(scores))}
+            var_weights = VarianceWeightStrategy.compute_weights(detector_scores_dict)
+            
+            # 创建权重向量
+            weights = torch.zeros(self.num_detectors, device=self.device)
+            for i, name in enumerate(detector_names):
+                if name in var_weights:
+                    weights[i] = torch.tensor(var_weights[name], device=self.device)
+            
+            # 确保权重和为1
+            if weights.sum() > 0:
+                weights = weights / weights.sum()
+            else:
+                # 如果所有权重都是0，则使用均匀权重
+                weights = torch.ones_like(weights) / self.num_detectors
+            
+            # 更新模型的动态权重参数
+            with torch.no_grad():
+                self.detector_weights.copy_(torch.log(weights + 1e-8))  # 使用log将权重转换为logits
+            
+            # 加权求和计算最终分数
+            ensemble_score = torch.zeros_like(scores[0])
+            for i, score in enumerate(scores):
+                ensemble_score += weights[i] * score
+            
+        elif self.fusion_method == 'static_weight':
             # 使用softmax获取权重，确保权重和为1且非负
             norm_weights = F.softmax(self.detector_weights, dim=0)
             
@@ -488,7 +519,7 @@ class AnomalyScoreEnsemble(nn.Module):
                     self.detector_performance[name]['score_stats']['min'].append(score.min().item())
                     self.detector_performance[name]['score_stats']['max'].append(score.max().item())
                     self.detector_performance[name]['score_stats']['mean'].append(score.mean().item())
-                    self.detector_performance[name]['score_stats']['std'].append(score.std().item())
+                    self.detector_performance[name]['score_stats']['std'].append(score.std(unbiased=False).item())
         
         return ensemble_score, weights
     
@@ -576,7 +607,7 @@ class TinyLogBERT(BertForMaskedLM):
         # 添加动态损失权重模块
         self.loss_weighting = DynamicLossWeighting(num_losses=3, method='uncertainty')
         
-        # 异常分数融合器
+        # 异常分数融合器 - 支持基于方差的权重策略
         self.anomaly_ensemble = AnomalyScoreEnsemble(
             num_detectors=5,  # KNN, Cluster, LOF, IForest, Reconstruction
             fusion_method='dynamic_weight'
@@ -584,6 +615,10 @@ class TinyLogBERT(BertForMaskedLM):
         
         # 是否启用融合模式
         self.enable_ensemble = True
+        
+        # 记录累积的方法分数，用于方差权重计算
+        self.accumulated_method_scores = {}
+        self.score_accumulation_limit = 1000  # 限制累积分数数量，避免内存过大
         
         self.init_weights()
     
@@ -840,10 +875,40 @@ class TinyLogBERT(BertForMaskedLM):
             # 添加重构误差作为一种检测方法
             method_scores['reconstruction'] = reconstruction_error
             
+            # 累积方法分数，用于计算方差权重
+            if self.enable_ensemble and self.anomaly_ensemble.fusion_method == 'dynamic_weight':
+                for name, scores in method_scores.items():
+                    if name not in self.accumulated_method_scores:
+                        self.accumulated_method_scores[name] = []
+                    
+                    # 将张量转换为列表并添加
+                    if isinstance(scores, torch.Tensor):
+                        scores_list = scores.detach().cpu().tolist()
+                    else:
+                        scores_list = list(scores)
+                    
+                    self.accumulated_method_scores[name].extend(scores_list)
+                    
+                    # 限制累积分数数量
+                    if len(self.accumulated_method_scores[name]) > self.score_accumulation_limit:
+                        # 保留最新的数据
+                        self.accumulated_method_scores[name] = self.accumulated_method_scores[name][-self.score_accumulation_limit:]
+            
             # 决定使用单一方法还是融合多种方法
             if self.enable_ensemble:
                 # 使用融合器合并多个检测结果
-                anomaly_score, method_weights = self.anomaly_ensemble(method_scores)
+                if self.anomaly_ensemble.fusion_method == 'dynamic_weight' and len(self.accumulated_method_scores) > 0:
+                    # 确保至少已累积了一定数量的分数
+                    min_samples_required = 10
+                    if all(len(scores) >= min_samples_required for scores in self.accumulated_method_scores.values()):
+                        # 使用累积的方法分数计算方差权重
+                        anomaly_score, method_weights = self.anomaly_ensemble(method_scores)
+                    else:
+                        # 样本不足，使用普通方式融合
+                        anomaly_score, method_weights = self.anomaly_ensemble(method_scores)
+                else:
+                    # 使用常规方法融合
+                    anomaly_score, method_weights = self.anomaly_ensemble(method_scores)
             else:
                 # 使用指定的单一方法
                 if self.current_method == 'reconstruction':
@@ -956,6 +1021,19 @@ class TinyLogBERT(BertForMaskedLM):
                 with open(param_path, "w") as f:
                     json.dump(params, f)
         
+        # 保存累积的方法分数（用于方差权重计算）
+        if hasattr(self, "accumulated_method_scores") and self.accumulated_method_scores:
+            scores_path = os.path.join(detector_dir, "accumulated_method_scores.json")
+            # 确保分数是可序列化的
+            serializable_scores = {}
+            for method, scores in self.accumulated_method_scores.items():
+                # 限制保存的分数数量，避免文件过大
+                max_scores_to_save = min(1000, len(scores))
+                serializable_scores[method] = scores[-max_scores_to_save:]
+            
+            with open(scores_path, "w") as f:
+                json.dump(serializable_scores, f)
+        
         # 保存融合器性能指标
         if hasattr(self.anomaly_ensemble, "detector_performance"):
             ensemble_path = os.path.join(detector_dir, "ensemble_performance.json")
@@ -969,7 +1047,8 @@ class TinyLogBERT(BertForMaskedLM):
         with open(config_path, "w") as f:
             json.dump({
                 "current_method": self.current_method,
-                "enable_ensemble": self.enable_ensemble
+                "enable_ensemble": self.enable_ensemble,
+                "score_accumulation_limit": getattr(self, "score_accumulation_limit", 1000)
             }, f)
         
         print(f"异常检测器特征内存和配置已保存至 {detector_dir}")
@@ -1003,6 +1082,20 @@ class TinyLogBERT(BertForMaskedLM):
                 config = json.load(f)
                 model.current_method = config.get("current_method", "knn")
                 model.enable_ensemble = config.get("enable_ensemble", True)
+                model.score_accumulation_limit = config.get("score_accumulation_limit", 1000)
+        
+        # 加载累积的方法分数
+        scores_path = os.path.join(detector_dir, "accumulated_method_scores.json")
+        if os.path.exists(scores_path):
+            try:
+                with open(scores_path, "r") as f:
+                    model.accumulated_method_scores = json.load(f)
+                print(f"已加载累积方法分数，用于方差权重计算")
+            except Exception as e:
+                print(f"加载累积方法分数时出错: {e}")
+                model.accumulated_method_scores = {}
+        else:
+            model.accumulated_method_scores = {}
         
         # 加载各个检测器的特征内存
         for method, detector in model.anomaly_methods.items():

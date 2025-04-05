@@ -10,6 +10,7 @@ from app.models.tinylogbert import create_tiny_log_bert
 from app.models.log_tokenizer import LogTokenizer
 from app.models.log_window import LogWindow
 
+THRESHOLD = os.environ.get("THRESHOLD", 0.5)
 
 class AnomalyScoreService:
     """
@@ -32,7 +33,7 @@ class AnomalyScoreService:
         self.log_window = LogWindow(tokenizer_name=tokenizer_name, window_size=window_size)
         self.embeddings_bank = None  # 存储正常日志的embeddings用于KNN分析
         self.knn_model = None
-        self.threshold = 0.5  # 默认异常阈值
+        self.threshold = THRESHOLD # 默认异常阈值
         
         logging.info(f"异常评分服务初始化完成，使用设备: {self.device}")
     

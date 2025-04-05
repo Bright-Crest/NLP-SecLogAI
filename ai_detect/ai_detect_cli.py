@@ -6,7 +6,11 @@ import json
 import sys
 import time
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MODEL_DIR = os.path.join(ROOT_DIR, "ai_detect", "checkpoint")
+OUTPUT_DIR = os.path.join(ROOT_DIR, "ai_detect", "output")
+
+sys.path.append(ROOT_DIR)
 from app.models.anomaly_detector import AnomalyDetector
 
 
@@ -36,9 +40,9 @@ def parse_args():
     input_group.add_argument("--log-file", type=str,
                           help="包含日志的文件路径，每行一条日志")
     
-    parser.add_argument("--model-path", type=str, required=True,
+    parser.add_argument("--model-path", type=str, default=MODEL_DIR,
                       help="预训练模型路径")
-    parser.add_argument("--window-type", type=str, choices=['fixed', 'sliding'], default='sliding',
+    parser.add_argument("--window-type", type=str, choices=['fixed', 'sliding'], default='fixed',
                       help="窗口类型: fixed或sliding")
     parser.add_argument("--window-size", type=int, default=10,
                       help="窗口大小")
@@ -46,8 +50,8 @@ def parse_args():
                       help="滑动窗口的步长")
     parser.add_argument("--threshold", type=float, default=0.5,
                       help="异常判定阈值")
-    parser.add_argument("--output", type=str, default=None,
-                      help="输出结果的JSON文件路径")
+    parser.add_argument("--output_dir", type=str, default=OUTPUT_DIR,
+                      help="输出结果的文件夹路径")
     parser.add_argument("--tokenizer-name", type=str, default="prajjwal1/bert-mini",
                       help="使用的tokenizer名称")
     
@@ -59,8 +63,8 @@ def main():
     args = parse_args()
     
     # 设置日志
-    output_dir = os.path.dirname(args.output) if args.output else None
-    setup_logging(output_dir)
+    output_dir = args.output_dir
+    setup_logging(os.path.join(output_dir, "logs"))
     
     # 确保模型路径存在
     if not os.path.exists(args.model_path):
@@ -145,20 +149,18 @@ def main():
             print(f"异常比例: {result['anomaly_ratio']:.2%}")
             
             # 打印异常窗口
-            if result['num_anomaly_windows'] > 0:
-                print("\n=== 异常窗口 ===")
-                for i, window in enumerate(result['windows']):
-                    if window['is_anomaly']:
-                        print(f"\n窗口 #{window['window_idx']} (分数: {window['score']:.4f}):")
-                        for j, log in enumerate(window['logs']):
-                            print(f"  [{window['start_idx'] + j}] {log}")
+            # if result['num_anomaly_windows'] > 0:
+            #     print("\n=== 异常窗口 ===")
+            #     for i, window in enumerate(result['windows']):
+            #         if window['is_anomaly']:
+            #             print(f"窗口 #{window['window_idx']} (分数: {window['score']:.4f})")
     
     except Exception as e:
         logging.error(f"检测过程中发生错误: {str(e)}")
         return 1
     
     # 保存结果到文件（如果指定）
-    if args.output:
+    if args.output_dir:
         # 尝试使用相同的编码格式保存结果
         successful_encoding = 'utf-8'  # 默认编码
         for encoding in ['utf-8', 'latin1', 'cp1252', 'gbk', 'iso-8859-1']:
@@ -175,9 +177,9 @@ def main():
                 continue
         
         try:
-            with open(args.output, 'w', encoding=successful_encoding) as f:
+            with open(args.output_dir, 'w', encoding=successful_encoding) as f:
                 json.dump(result, f, indent=2, ensure_ascii=False)
-            logging.info(f"结果已保存到: {args.output} (使用 {successful_encoding} 编码)")
+            logging.info(f"结果已保存到: {args.output_dir} (使用 {successful_encoding} 编码)")
         except Exception as e:
             logging.error(f"保存结果失败: {str(e)}")
     
