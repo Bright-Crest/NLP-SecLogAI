@@ -1,12 +1,11 @@
-from app.app import app,init_db
+from app.app import app
 from config import config
 
 if __name__ == '__main__':
+
     # 加载配置
     app.config.from_object(config['development'])
 
-    # 初始化数据库
-    init_db()
     
     # 启动服务
     app.run(

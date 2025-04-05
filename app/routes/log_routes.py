@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from app.services.log_parser import SSHLogParser,WebLogParser,IptablesLogParser,MySQLLogParser,HDFSLogParser,LINUXLogParser
 from app.models.db import get_db
+import sqlite3
 
 log_bp = Blueprint("logs", __name__)
 
@@ -136,7 +137,7 @@ def upload_log():
 
 
 @log_bp.route("/upload2", methods=["POST"])
-def upload_log():
+def upload_log2():
     """上传日志（支持detected_by字段）"""
     data = request.get_json()
     required_fields = ["source_ip", "event_type", "message"]
