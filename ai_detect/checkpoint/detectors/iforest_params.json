@@ -1,0 +1,1 @@
+{"method": "iforest", "n_neighbors": 5, "n_clusters": 10, "fit_memory_size": 10000, "feature_dim": 256, "is_fitted": true}

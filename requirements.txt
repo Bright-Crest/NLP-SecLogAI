@@ -1,7 +1,18 @@
 # 基础依赖
-Flask==3.1.0
-Werkzeug==3.1.3
-
-
+Flask
+Werkzeug
+transformers
+torch
+numpy
+scikit-learn
+matplotlib
+pandas
+tqdm
+seaborn
 # 测试依赖
-pytest==8.3.5
+pytest
+pytest-cov
+pytest-mock
+pytest-flask
+coverage
+requests
