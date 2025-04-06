@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 import os
 import logging
 import sys
@@ -16,7 +16,7 @@ ai_bp = Blueprint('ai', __name__, url_prefix='/ai')
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-@ai_bp.before_app_first_request
+# 初始化AI服务的函数
 def setup_ai_services():
     """初始化AI检测服务"""
     # 默认模型路径
@@ -30,6 +30,47 @@ def setup_ai_services():
     else:
         logger.warning(f"模型文件不存在: {model_dir}")
 
+# 定义初始化函数，根据Flask版本提供兼容性
+def init_ai_bp(app=None):
+    """
+    初始化AI蓝图
+    在注册蓝图时调用该函数 
+    例如: init_ai_bp(app)
+    """
+    if app is not None:
+        # 检查Flask版本
+        try:
+            # 尝试使用before_first_request (Flask 2.0之前的版本)
+            app.before_first_request(setup_ai_services)
+            logger.info("使用app.before_first_request注册AI服务初始化")
+        except AttributeError:
+            # 对于Flask 2.0+版本，手动设置一个应用级别的before_request
+            @app.before_request
+            def init_before_first_request():
+                if not hasattr(app, '_ai_services_initialized'):
+                    setup_ai_services()
+                    setattr(app, '_ai_services_initialized', True)
+            logger.info("使用app.before_request钩子注册AI服务初始化")
+    else:
+        # 如果没有传递app参数，那么直接初始化服务
+        setup_ai_services()
+        logger.info("直接初始化AI服务")
+
+# 注册路由函数，供测试和应用使用
+def register_routes(app):
+    """
+    在Flask应用中注册AI蓝图并初始化服务
+    
+    参数:
+        app: Flask应用实例
+    """
+    # 先初始化AI服务（包括设置before_request钩子）
+    init_ai_bp(app)
+    
+    # 然后注册蓝图
+    app.register_blueprint(ai_bp)
+    
+    return app
 
 @ai_bp.route('/score_log', methods=['POST'])
 def score_log():
@@ -219,39 +260,60 @@ def detect_anomaly():
             }
         else:
             # 日志序列
-            scores, avg_score, max_score = anomaly_service.score_log_sequence(
-                logs, window_type=window_type, stride=stride, use_knn=use_knn
-            )
-            
-            # 根据阈值识别异常窗口
-            windows = []
-            for i, score in enumerate(scores):
-                # 对于滑动窗口，记录窗口开始位置
-                start_idx = i * stride if window_type == 'sliding' else i * anomaly_service.window_size
-                end_idx = min(start_idx + anomaly_service.window_size, len(logs))
-                window_logs = logs[start_idx:end_idx]
+            try:
+                # 尝试调用score_log_sequence
+                scores_result = anomaly_service.score_log_sequence(
+                    logs, window_type=window_type, stride=stride, use_knn=use_knn
+                )
                 
-                windows.append({
-                    "window_idx": i,
-                    "start_idx": start_idx,
-                    "end_idx": end_idx,
-                    "logs": window_logs,
-                    "score": float(score),
-                    "is_anomaly": score > threshold
-                })
-            
-            # 找出异常窗口
-            anomaly_windows = [w for w in windows if w["is_anomaly"]]
-            
-            result = {
-                "num_windows": len(windows),
-                "avg_score": float(avg_score),
-                "max_score": float(max_score),
-                "num_anomaly_windows": len(anomaly_windows),
-                "anomaly_ratio": float(len(anomaly_windows) / len(windows)) if windows else 0.0,
-                "windows": windows,
-                "knn_used": use_knn if use_knn is not None else (anomaly_service.use_knn and anomaly_service.knn_model is not None)
-            }
+                # 确保返回了三个值
+                if not scores_result or len(scores_result) != 3:
+                    scores, avg_score, max_score = [], 0.0, 0.0
+                else:
+                    scores, avg_score, max_score = scores_result
+                
+                # 根据阈值识别异常窗口
+                windows = []
+                for i, score in enumerate(scores):
+                    # 对于滑动窗口，记录窗口开始位置
+                    start_idx = i * stride if window_type == 'sliding' else i * anomaly_service.window_size
+                    end_idx = min(start_idx + anomaly_service.window_size, len(logs))
+                    window_logs = logs[start_idx:end_idx]
+                    
+                    windows.append({
+                        "window_idx": i,
+                        "start_idx": start_idx,
+                        "end_idx": end_idx,
+                        "logs": window_logs,
+                        "score": float(score),
+                        "is_anomaly": score > threshold
+                    })
+                
+                # 找出异常窗口
+                anomaly_windows = [w for w in windows if w["is_anomaly"]]
+                
+                result = {
+                    "num_windows": len(windows),
+                    "avg_score": float(avg_score),
+                    "max_score": float(max_score),
+                    "num_anomaly_windows": len(anomaly_windows),
+                    "anomaly_ratio": float(len(anomaly_windows) / len(windows)) if windows else 0.0,
+                    "windows": windows,
+                    "knn_used": use_knn if use_knn is not None else (anomaly_service.use_knn and anomaly_service.knn_model is not None)
+                }
+            except Exception as inner_e:
+                logger.error(f"评分日志序列时发生错误: {str(inner_e)}")
+                # 返回一个空的结果结构
+                result = {
+                    "num_windows": 0,
+                    "avg_score": 0.0,
+                    "max_score": 0.0,
+                    "num_anomaly_windows": 0,
+                    "anomaly_ratio": 0.0,
+                    "windows": [],
+                    "error": str(inner_e),
+                    "knn_used": False
+                }
         
         # 返回结果
         return jsonify({"result": result})
@@ -442,6 +504,14 @@ def knn_status():
             
             # 设置KNN增强状态
             anomaly_service.set_use_knn(enabled)
+            
+            # 返回成功响应，包含success字段
+            return jsonify({
+                "success": True,
+                "knn_enabled": anomaly_service.use_knn,
+                "knn_available": anomaly_service.knn_model is not None,
+                "num_embeddings": len(anomaly_service.embeddings_bank) if anomaly_service.embeddings_bank is not None else 0
+            })
         
         # 返回当前状态
         return jsonify({

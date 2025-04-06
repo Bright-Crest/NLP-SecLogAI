@@ -38,6 +38,7 @@ class LogWindow:
             remaining_logs: 剩余未处理日志(不足一个窗口)
         """
         window_tokens = []
+        window_texts = []
         
         # 按固定窗口大小分组
         for i in range(0, len(log_list), self.window_size):
@@ -45,12 +46,32 @@ class LogWindow:
             
             # 若最后一组不足window_size且不需处理，则返回剩余日志
             if len(window_logs) < self.window_size and i + self.window_size < len(log_list):
+                # 处理收集到的窗口文本
+                if window_texts:
+                    batch_tokens = self.log_tokenizer.tokenize_batch(window_texts)
+                    for j in range(len(window_texts)):
+                        # 创建单个窗口的tokens
+                        single_tokens = {
+                            'input_ids': batch_tokens['input_ids'][j].unsqueeze(0),
+                            'attention_mask': batch_tokens['attention_mask'][j].unsqueeze(0)
+                        }
+                        window_tokens.append(single_tokens)
                 return window_tokens, log_list[i:]
             
             # 将窗口内日志用[SEP]连接
             window_text = f" {self.sep_token} ".join(window_logs)
-            tokens = self.log_tokenizer.tokenize(window_text)
-            window_tokens.append(tokens)
+            window_texts.append(window_text)
+        
+        # 批量处理所有窗口文本
+        if window_texts:
+            batch_tokens = self.log_tokenizer.tokenize_batch(window_texts)
+            for j in range(len(window_texts)):
+                # 创建单个窗口的tokens
+                single_tokens = {
+                    'input_ids': batch_tokens['input_ids'][j].unsqueeze(0),
+                    'attention_mask': batch_tokens['attention_mask'][j].unsqueeze(0)
+                }
+                window_tokens.append(single_tokens)
         
         return window_tokens, []  # 返回所有窗口的token和空的剩余日志
     
@@ -66,17 +87,28 @@ class LogWindow:
             window_tokens: 窗口token列表
         """
         window_tokens = []
+        window_texts = []
         
         # 确保日志数量足够处理
         if len(log_list) < self.window_size:
             return window_tokens
         
-        # 按滑动窗口处理
+        # 按滑动窗口处理，先收集所有窗口文本
         for i in range(0, len(log_list) - self.window_size + 1, stride):
             window_logs = log_list[i:i + self.window_size]
             window_text = f" {self.sep_token} ".join(window_logs)
-            tokens = self.log_tokenizer.tokenize(window_text)
-            window_tokens.append(tokens)
+            window_texts.append(window_text)
+        
+        # 批量处理所有窗口文本
+        if window_texts:
+            batch_tokens = self.log_tokenizer.tokenize_batch(window_texts)
+            for j in range(len(window_texts)):
+                # 创建单个窗口的tokens
+                single_tokens = {
+                    'input_ids': batch_tokens['input_ids'][j].unsqueeze(0),
+                    'attention_mask': batch_tokens['attention_mask'][j].unsqueeze(0)
+                }
+                window_tokens.append(single_tokens)
         
         return window_tokens
     
