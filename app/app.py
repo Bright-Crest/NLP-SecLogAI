@@ -29,10 +29,12 @@ def initialize_database():
 from app.routes.log_routes import log_bp  # 成员B的日志管理API
 from app.routes.nlp_routes import nlp_bp  # 成员D的NLP处理API
 from app.routes.anomaly_routes import anomaly_bp  # 成员C的异常检测API
+from app.routes.ai_routes import ai_bp  # 成员E的AI检测API
 
 app.register_blueprint(log_bp, url_prefix='/logs')
 app.register_blueprint(nlp_bp, url_prefix='/nlp')
 app.register_blueprint(anomaly_bp, url_prefix='/anomalies')
+app.register_blueprint(ai_bp, url_prefix='/ai')
 
 # ---------- 4. 错误处理 ----------
 @app.errorhandler(404)
