@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-bs-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI日志异常检测</title>
+    
+    <!-- Bootstrap 5 CDN -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Lucide 图标 CDN -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        :root {
+            --primary-color: #0d6efd;
+            --success-color: #198754;
+            --warning-color: #ffc107;
+            --danger-color: #dc3545;
+            --card-border-radius: 0.5rem;
+            --transition-speed: 0.3s;
+        }
+        
+        body {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .navbar-brand {
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+        
+        .ai-card {
+            border-radius: var(--card-border-radius);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            transition: all var(--transition-speed) ease;
+        }
+        
+        .ai-card:hover {
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
+            transform: translateY(-2px);
+        }
+        
+        .score-gauge {
+            position: relative;
+            width: 120px;
+            height: 120px;
+            margin: 0 auto;
+        }
+        
+        .score-value {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 24px;
+            font-weight: bold;
+        }
+        
+        footer {
+            margin-top: auto;
+            padding: 1rem 0;
+        }
+        
+        .page-spinner {
+            width: 3rem;
+            height: 3rem;
+        }
+        
+        .feature-icon {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        #resultPanel {
+            transition: opacity var(--transition-speed) ease;
+        }
+
+        /* 表格和日志视图样式 */
+        .score-cell {
+            text-align: center;
+            font-weight: bold;
+        }
+        
+        .high-score {
+            color: var(--danger-color);
+        }
+        
+        .medium-score {
+            color: var(--warning-color);
+        }
+        
+        .low-score {
+            color: var(--success-color);
+        }
+        
+        .log-text {
+            font-family: monospace;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            background-color: #f8f9fa;
+            border: 1px solid #ddd;
+            padding: 10px;
+            border-radius: 4px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-size: 0.85rem;
+            color: #333;
+        }
+        
+        [data-bs-theme="dark"] .log-text {
+            background-color: #212529;
+            border-color: #495057;
+            color: #f8f9fa;
+        }
+        
+        .filters {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .log-row.hidden {
+            display: none;
+        }
+        
+        #anomaliesTable th {
+            position: sticky;
+            top: 0;
+            background-color: var(--bs-body-bg);
+            z-index: 1;
+            cursor: pointer;
+            user-select: none;
+        }
+        
+        #anomaliesTable th:hover {
+            background-color: rgba(0, 0, 0, 0.05);
+        }
+        
+        [data-bs-theme="dark"] #anomaliesTable th:hover {
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+        
+        .sort-indicator {
+            margin-left: 5px;
+            font-size: 0.75rem;
+        }
+        
+        /* 扩展表格样式 */
+        #anomaliesTable {
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+        
+        #anomaliesTable td {
+            vertical-align: middle;
+        }
+        
+        #anomaliesTable td:nth-child(3) {
+            font-weight: bold;
+            text-align: center;
+        }
+        
+        /* 改进列表视图样式 */
+        #anomalyWindowsList .list-group-item {
+            border-left: 4px solid transparent;
+            transition: all 0.2s ease;
+        }
+        
+        #anomalyWindowsList .list-group-item:hover {
+            background-color: rgba(0, 0, 0, 0.03);
+        }
+        
+        /* 基于分数的颜色标记 */
+        .score-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 5px;
+        }
+        
+        .score-indicator.high {
+            background-color: var(--danger-color);
+        }
+        
+        .score-indicator.medium {
+            background-color: var(--warning-color);
+        }
+        
+        .score-indicator.low {
+            background-color: var(--success-color);
+        }
+    </style>
+</head>
+<body>
+    <!-- 导航栏 -->
+    <nav class="navbar navbar-expand-lg bg-primary navbar-dark">
+        <div class="container">
+            <a class="navbar-brand" href="#">
+                <i data-lucide="shield-alert" class="me-2"></i>
+                AI日志异常检测
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/">首页</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#singleDetect">单条检测</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="#batchDetect">批量检测</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#modelSettings">模型设置</a>
+                    </li>
+                    <li class="nav-item">
+                        <button class="btn btn-outline-light ms-2" id="themeToggle">
+                            <i data-lucide="moon" class="theme-icon-dark d-none"></i>
+                            <i data-lucide="sun" class="theme-icon-light"></i>
+                        </button>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container py-4">
+        <!-- 内容区域 -->
+        <div class="row mb-4">
+            <div class="col">
+                <div class="alert alert-info d-flex align-items-center" role="alert">
+                    <i data-lucide="info" class="me-2"></i>
+                    <div>
+                        AI日志异常检测系统已启动，可以开始检测日志异常。
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 主检测区域 -->
+        <div class="row g-4">
+            <!-- 单条日志检测卡片 -->
+            <div class="col-lg-6" id="singleDetect">
+                <div class="card ai-card h-100">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="card-title mb-0">
+                            <i data-lucide="file-text" class="me-2"></i>
+                            单条日志检测
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-floating mb-3">
+                            <textarea class="form-control" id="singleLogInput" style="height: 150px" placeholder="请输入日志内容"></textarea>
+                            <label for="singleLogInput">请输入日志内容</label>
+                        </div>
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" id="knnSwitch">
+                            <label class="form-check-label" for="knnSwitch">使用KNN增强</label>
+                        </div>
+                        <button id="singleDetectBtn" class="btn btn-primary">
+                            <i data-lucide="search" class="me-1"></i>
+                            检测异常
+                        </button>
+                        
+                        <!-- 单条检测结果面板 -->
+                        <div id="singleResultPanel" class="mt-4" style="display:none; opacity:0;">
+                            <h5 class="border-bottom pb-2 mb-3">检测结果</h5>
+                            
+                            <div class="row mb-3">
+                                <div class="col-md-6 text-center">
+                                    <div class="score-gauge mb-3">
+                                        <canvas id="scoreGauge" width="120" height="120"></canvas>
+                                        <div class="score-value">0%</div>
+                                    </div>
+                                    <div id="anomalyBadge" class="badge bg-success">正常</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <ul class="list-group">
+                                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                                            检测阈值
+                                            <span id="thresholdValue" class="badge bg-secondary rounded-pill">0.5</span>
+                                        </li>
+                                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                                            KNN增强
+                                            <span id="knnStatus" class="badge bg-secondary rounded-pill">未使用</span>
+                                        </li>
+                                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                                            设备
+                                            <span id="deviceInfo" class="badge bg-secondary rounded-pill">CPU</span>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            <div class="alert alert-primary" role="alert">
+                                <i data-lucide="lightbulb" class="me-2"></i>
+                                <span id="resultExplanation">分析结果将显示在这里...</span>
+                            </div>
+                        </div>
+                        
+                        <!-- 加载指示器 -->
+                        <div id="singleLoadingIndicator" class="text-center my-4" style="display:none;">
+                            <div class="spinner-border text-primary page-spinner" role="status">
+                                <span class="visually-hidden">加载中...</span>
+                            </div>
+                            <p class="mt-2">正在分析日志...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 批量检测卡片 -->
+            <div class="col-lg-6" id="batchDetect">
+                <div class="card ai-card h-100">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="card-title mb-0">
+                            <i data-lucide="files" class="me-2"></i>
+                            批量日志检测
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-floating mb-3">
+                            <textarea class="form-control" id="batchLogInput" style="height: 150px" placeholder="请输入多条日志，每行一条"></textarea>
+                            <label for="batchLogInput">请输入多条日志，每行一条</label>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <div class="form-floating">
+                                    <select class="form-select" id="windowTypeSelect">
+                                        <option value="sliding">滑动窗口</option>
+                                        <option value="fixed">固定窗口</option>
+                                    </select>
+                                    <label for="windowTypeSelect">窗口类型</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-floating">
+                                    <input type="number" class="form-control" id="strideInput" value="1" min="1">
+                                    <label for="strideInput">步长设置</label>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" id="batchKnnSwitch">
+                            <label class="form-check-label" for="batchKnnSwitch">使用KNN增强</label>
+                        </div>
+                        
+                        <button id="batchDetectBtn" class="btn btn-primary">
+                            <i data-lucide="search" class="me-1"></i>
+                            批量检测
+                        </button>
+                        
+                        <!-- 批量检测结果面板 -->
+                        <div id="batchResultPanel" class="mt-4" style="display:none; opacity:0;">
+                            <h5 class="border-bottom pb-2 mb-3">批量检测结果</h5>
+                            
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <div class="card border-0 bg-light">
+                                        <div class="card-body p-3">
+                                            <h6 class="card-subtitle mb-2 text-muted">统计信息</h6>
+                                            <div class="d-flex justify-content-between mb-2">
+                                                <span>窗口总数:</span>
+                                                <span id="totalWindows" class="fw-bold">0</span>
+                                            </div>
+                                            <div class="d-flex justify-content-between mb-2">
+                                                <span>异常窗口:</span>
+                                                <span id="anomalyWindows" class="fw-bold text-danger">0</span>
+                                            </div>
+                                            <div class="d-flex justify-content-between">
+                                                <span>异常率:</span>
+                                                <span id="anomalyRatio" class="fw-bold">0%</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="card border-0 bg-light h-100">
+                                        <div class="card-body p-3 d-flex flex-column">
+                                            <h6 class="card-subtitle mb-2 text-muted">分数分布</h6>
+                                            <div class="d-flex justify-content-between mb-2">
+                                                <span>平均分数:</span>
+                                                <span id="avgScore" class="fw-bold">0</span>
+                                            </div>
+                                            <div class="d-flex justify-content-between">
+                                                <span>最高分数:</span>
+                                                <span id="maxScore" class="fw-bold text-danger">0</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- 分数趋势图 -->
+                            <div class="mb-4">
+                                <canvas id="scoreChart" height="200"></canvas>
+                            </div>
+                            
+                            <!-- 过滤和视图切换 -->
+                            <div class="filters mb-3">
+                                <div class="row g-2 align-items-center">
+                                    <div class="col-md-4">
+                                        <div class="input-group">
+                                            <span class="input-group-text"><i data-lucide="search"></i></span>
+                                            <input type="text" id="logSearchInput" class="form-control" placeholder="搜索日志内容...">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <select id="scoreFilterSelect" class="form-select">
+                                            <option value="all">所有分数</option>
+                                            <option value="high">高分 (>0.7)</option>
+                                            <option value="medium">中等 (0.4-0.7)</option>
+                                            <option value="low">低分 (<0.4)</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="input-group">
+                                            <span class="input-group-text">阈值过滤</span>
+                                            <input type="number" id="thresholdFilterInput" class="form-control" value="0.5" min="0" max="1" step="0.05">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <button class="btn btn-primary w-100" onclick="applyFilters()">
+                                            筛选
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- 视图切换选项卡 -->
+                            <ul class="nav nav-tabs mb-3" role="tablist">
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link active" id="tableViewTab" data-bs-toggle="tab" data-bs-target="#tableView" type="button" role="tab">
+                                        <i data-lucide="table" class="me-1"></i>表格视图
+                                    </button>
+                                </li>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link" id="listViewTab" data-bs-toggle="tab" data-bs-target="#listView" type="button" role="tab">
+                                        <i data-lucide="list" class="me-1"></i>列表视图
+                                    </button>
+                                </li>
+                            </ul>
+                            
+                            <!-- 视图内容 -->
+                            <div class="tab-content">
+                                <!-- 表格视图 -->
+                                <div class="tab-pane fade show active" id="tableView" role="tabpanel">
+                                    <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+                                        <table class="table table-hover" id="anomaliesTable">
+                                            <thead>
+                                                <tr>
+                                                    <th style="width: 5%" onclick="sortTable(0)">#<span class="sort-indicator"></span></th>
+                                                    <th style="width: 15%" onclick="sortTable(1)">窗口位置<span class="sort-indicator"></span></th>
+                                                    <th style="width: 10%" onclick="sortTable(2, true)">异常分数<span class="sort-indicator"></span></th>
+                                                    <th style="width: 10%">操作</th>
+                                                    <th style="width: 60%">日志内容</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="anomaliesTableBody">
+                                                <!-- 异常窗口将动态添加到这里 -->
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                                
+                                <!-- 列表视图 -->
+                                <div class="tab-pane fade" id="listView" role="tabpanel">
+                                    <div id="anomalyWindowsList" style="max-height: 500px; overflow-y: auto;">
+                                        <!-- 异常窗口将动态添加到这里 -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 批量加载指示器 -->
+                        <div id="batchLoadingIndicator" class="text-center my-4" style="display:none;">
+                            <div class="spinner-border text-primary page-spinner" role="status">
+                                <span class="visually-hidden">加载中...</span>
+                            </div>
+                            <p class="mt-2">正在分析日志序列...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 模型设置区域 -->
+        <div class="row mt-4" id="modelSettings">
+            <div class="col-12">
+                <div class="card ai-card">
+                    <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">
+                            <i data-lucide="settings" class="me-2"></i>
+                            模型设置
+                        </h5>
+                        <button id="refreshModelStatus" class="btn btn-sm btn-light">
+                            <i data-lucide="refresh-cw" class="me-1"></i>
+                            刷新状态
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6 class="border-bottom pb-2 mb-3">模型状态</h6>
+                                <ul class="list-group mb-4">
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        模型加载
+                                        <span id="modelLoaded" class="badge bg-success">已加载</span>
+                                    </li>
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        运行设备
+                                        <span id="modelDevice" class="badge bg-secondary">CPU</span>
+                                    </li>
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        KNN增强
+                                        <span id="modelKnn" class="badge bg-secondary">未启用</span>
+                                    </li>
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        嵌入向量数
+                                        <span id="embedCount" class="badge bg-secondary">0</span>
+                                    </li>
+                                </ul>
+                            </div>
+                            
+                            <div class="col-md-6">
+                                <h6 class="border-bottom pb-2 mb-3">参数设置</h6>
+                                
+                                <!-- 阈值设置 -->
+                                <div class="mb-4">
+                                    <label for="thresholdRange" class="form-label d-flex justify-content-between">
+                                        <span>异常阈值</span>
+                                        <span id="thresholdLabel">0.5</span>
+                                    </label>
+                                    <input type="range" class="form-range" id="thresholdRange" min="0" max="1" step="0.01" value="0.5">
+                                    <div class="d-flex justify-content-between text-muted small">
+                                        <span>正常 (0.0)</span>
+                                        <span>异常 (1.0)</span>
+                                    </div>
+                                </div>
+                                
+                                <!-- KNN开关 -->
+                                <div class="form-check form-switch mb-3">
+                                    <input class="form-check-input" type="checkbox" id="globalKnnSwitch">
+                                    <label class="form-check-label" for="globalKnnSwitch">全局启用KNN增强</label>
+                                </div>
+                                
+                                <button id="saveSettings" class="btn btn-primary mt-2">
+                                    <i data-lucide="save" class="me-1"></i>
+                                    保存设置
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="bg-light py-3 border-top">
+        <div class="container text-center">
+            <p class="mb-0 text-muted">NLP-SecLogAI © 2023 | 安全日志智能分析平台</p>
+        </div>
+    </footer>
+
+    <!-- Bootstrap JS Bundle CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- 引入自定义JavaScript -->
+    <script src="/static/js/ai-detector.js"></script>
+</body>
+</html> 

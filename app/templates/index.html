@@ -1,28 +1,468 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN" data-bs-theme="light">
 <head>
-    <title>日志查询系统</title>
-    <link rel="stylesheet" href="/static/css/bootstrap.min.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NLP-SecLogAI | 安全日志智能分析平台</title>
+    
+    <!-- Bootstrap 5 CDN -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Lucide 图标 CDN -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- AOS 动画库 -->
+    <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
+    
+    <style>
+        :root {
+            --primary-color: #0d6efd;
+            --secondary-color: #6c757d;
+            --success-color: #198754;
+            --warning-color: #ffc107;
+            --danger-color: #dc3545;
+            --info-color: #0dcaf0;
+            --card-border-radius: 0.75rem;
+            --transition-speed: 0.3s;
+        }
+        
+        body {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .navbar-brand {
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+        
+        .hero-section {
+            padding: 5rem 0;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e4ecfb 100%);
+        }
+        
+        [data-bs-theme="dark"] .hero-section {
+            background: linear-gradient(135deg, #2c3e50 0%, #1a2a38 100%);
+        }
+        
+        .hero-title {
+            font-size: 3rem;
+            font-weight: 800;
+            margin-bottom: 1.5rem;
+            line-height: 1.2;
+        }
+        
+        .hero-description {
+            font-size: 1.25rem;
+            margin-bottom: 2rem;
+            opacity: 0.9;
+        }
+        
+        .feature-card {
+            border-radius: var(--card-border-radius);
+            overflow: hidden;
+            transition: all var(--transition-speed);
+            border: none;
+            box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.05);
+            height: 100%;
+        }
+        
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 1rem 2rem rgba(0, 0, 0, 0.1);
+        }
+        
+        .feature-icon-wrapper {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 1.5rem;
+        }
+        
+        .feature-icon {
+            width: 36px;
+            height: 36px;
+            color: #fff;
+        }
+        
+        .feature-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+        
+        .feature-description {
+            color: var(--bs-secondary-color);
+            margin-bottom: 1.5rem;
+        }
+        
+        .cta-section {
+            padding: 5rem 0;
+            background-color: var(--bs-primary-bg-subtle);
+        }
+        
+        .footer {
+            padding: 2rem 0;
+            margin-top: auto;
+        }
+        
+        .footer-link {
+            color: var(--bs-secondary-color);
+            text-decoration: none;
+            transition: all var(--transition-speed);
+        }
+        
+        .footer-link:hover {
+            color: var(--bs-primary);
+        }
+        
+        /* 暗黑模式切换按钮 */
+        .theme-toggle {
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            background-color: var(--bs-body-bg);
+            border: 1px solid var(--bs-border-color);
+            cursor: pointer;
+            transition: all var(--transition-speed);
+        }
+        
+        .theme-toggle:hover {
+            background-color: var(--bs-tertiary-bg);
+        }
+        
+        .theme-icon {
+            width: 20px;
+            height: 20px;
+            color: var(--bs-body-color);
+        }
+        
+        /* 卡片悬浮动效 */
+        @media (min-width: 992px) {
+            .stagger-animation:nth-child(1) {
+                transition-delay: 0ms;
+            }
+            .stagger-animation:nth-child(2) {
+                transition-delay: 100ms;
+            }
+            .stagger-animation:nth-child(3) {
+                transition-delay: 200ms;
+            }
+        }
+    </style>
 </head>
 <body>
-    <div class="container">
-        <h2>日志查询</h2>
-        <form id="queryForm">
-            <input type="text" id="queryInput" class="form-control" placeholder="输入查询语句">
-            <button type="submit" class="btn btn-primary">查询</button>
-        </form>
-        <div id="results"></div>
-    </div>
+    <!-- 导航栏 -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand d-flex align-items-center" href="/">
+                <i data-lucide="shield" class="me-2"></i>
+                NLP-SecLogAI
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/">首页</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/ai/ui">异常检测</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/nlp/ui">智能查询</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#about">关于我们</a>
+                    </li>
+                </ul>
+                <button id="themeToggle" class="theme-toggle ms-2">
+                    <i data-lucide="moon" class="theme-icon theme-icon-dark d-none"></i>
+                    <i data-lucide="sun" class="theme-icon theme-icon-light"></i>
+                </button>
+            </div>
+        </div>
+    </nav>
 
-    <script src="/static/js/jquery.min.js"></script>
+    <!-- 英雄区域 -->
+    <section class="hero-section">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-lg-6" data-aos="fade-right">
+                    <h1 class="hero-title">智能安全日志分析平台</h1>
+                    <p class="hero-description">利用人工智能和自然语言处理技术，为企业安全日志提供智能分析、异常检测和自然语言查询能力。</p>
+                    <div class="d-flex flex-wrap gap-2">
+                        <a href="/ai/ui" class="btn btn-primary btn-lg">
+                            <i data-lucide="alert-circle" class="me-2"></i>
+                            开始异常检测
+                        </a>
+                        <a href="/nlp/ui" class="btn btn-outline-primary btn-lg">
+                            <i data-lucide="search" class="me-2"></i>
+                            自然语言查询
+                        </a>
+                    </div>
+                </div>
+                <div class="col-lg-6 d-none d-lg-block" data-aos="fade-left">
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 功能特点区域 -->
+    <section class="py-5 mt-3">
+        <div class="container">
+            <div class="text-center mb-5" data-aos="fade-up">
+                <h2 class="fw-bold mb-3">核心功能</h2>
+                <p class="lead text-secondary">我们提供全面的安全日志分析解决方案</p>
+            </div>
+            
+            <div class="row g-4">
+                <!-- AI异常检测 -->
+                <div class="col-md-6 col-lg-4 stagger-animation" data-aos="fade-up">
+                    <div class="feature-card card h-100">
+                        <div class="card-body p-4">
+                            <div class="feature-icon-wrapper bg-primary">
+                                <i data-lucide="shield-alert" class="feature-icon"></i>
+                            </div>
+                            <h3 class="feature-title">AI异常检测</h3>
+                            <p class="feature-description">
+                                利用先进的自监督学习模型自动识别日志中的异常模式，提前发现潜在安全威胁。
+                            </p>
+                            <a href="/ai/ui" class="btn btn-outline-primary">
+                                查看详情
+                                <i data-lucide="arrow-right" class="ms-1"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 自然语言查询 -->
+                <div class="col-md-6 col-lg-4 stagger-animation" data-aos="fade-up">
+                    <div class="feature-card card h-100">
+                        <div class="card-body p-4">
+                            <div class="feature-icon-wrapper bg-success">
+                                <i data-lucide="search" class="feature-icon"></i>
+                            </div>
+                            <h3 class="feature-title">自然语言查询</h3>
+                            <p class="feature-description">
+                                使用普通语言进行查询，系统自动转换为SQL并执行，无需编写复杂查询语句。
+                            </p>
+                            <a href="/nlp/ui" class="btn btn-outline-success">
+                                查看详情
+                                <i data-lucide="arrow-right" class="ms-1"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 智能分析报告 -->
+                <div class="col-md-6 col-lg-4 stagger-animation" data-aos="fade-up">
+                    <div class="feature-card card h-100">
+                        <div class="card-body p-4">
+                            <div class="feature-icon-wrapper bg-info">
+                                <i data-lucide="bar-chart" class="feature-icon"></i>
+                            </div>
+                            <h3 class="feature-title">智能分析报告</h3>
+                            <p class="feature-description">
+                                自动生成全面的安全分析报告，展示关键指标、异常趋势和潜在风险。
+                            </p>
+                            <a href="#" class="btn btn-outline-info">
+                                即将推出
+                                <i data-lucide="clock" class="ms-1"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 技术优势部分 -->
+    <section class="py-5 bg-light" id="about">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-lg-6 mb-4 mb-lg-0" data-aos="fade-right">
+                    <h2 class="fw-bold mb-4">技术优势</h2>
+                    <div class="d-flex mb-4">
+                        <div class="me-3 text-primary">
+                            <i data-lucide="cpu" width="32" height="32"></i>
+                        </div>
+                        <div>
+                            <h4 class="fw-semibold">先进的自监督学习</h4>
+                            <p>采用自监督对比学习模型，无需人工标记数据，自动学习日志的正常模式。</p>
+                        </div>
+                    </div>
+                    <div class="d-flex mb-4">
+                        <div class="me-3 text-primary">
+                            <i data-lucide="language" width="32" height="32"></i>
+                        </div>
+                        <div>
+                            <h4 class="fw-semibold">自然语言处理</h4>
+                            <p>内置先进的NLP到SQL转换引擎，支持复杂的自然语言查询转换为精准的SQL查询。</p>
+                        </div>
+                    </div>
+                    <div class="d-flex">
+                        <div class="me-3 text-primary">
+                            <i data-lucide="scale" width="32" height="32"></i>
+                        </div>
+                        <div>
+                            <h4 class="fw-semibold">高性能架构</h4>
+                            <p>平台采用高效的分布式架构，支持大规模日志数据的实时处理和分析。</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-6" data-aos="fade-left">
+                    <div class="rounded bg-white p-4 shadow-sm">
+                        <h3 class="fw-bold mb-3">关于我们</h3>
+                        <p>NLP-SecLogAI是一个面向企业安全团队的智能日志分析平台，致力于通过人工智能和自然语言处理技术，简化日志分析流程，提升安全运营效率。</p>
+                        <p>我们的团队由安全专家和AI研究人员组成，拥有丰富的行业经验和技术积累，为企业提供最先进的安全日志分析解决方案。</p>
+                        <div class="d-flex align-items-center mt-4">
+                            <div class="d-flex gap-3">
+                                <a href="#" class="btn btn-outline-primary">
+                                    <i data-lucide="mail" class="me-1"></i>
+                                    联系我们
+                                </a>
+                                <a href="#" class="btn btn-outline-secondary">
+                                    <i data-lucide="github" class="me-1"></i>
+                                    GitHub
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 号召性用语区域 -->
+    <section class="cta-section">
+        <div class="container text-center" data-aos="fade-up">
+            <h2 class="fw-bold mb-4">开始使用 NLP-SecLogAI</h2>
+            <p class="lead mb-4">体验下一代智能安全日志分析平台，提升安全运营效率</p>
+            <div class="d-flex justify-content-center gap-3">
+                <a href="/ai/ui" class="btn btn-primary btn-lg">
+                    <i data-lucide="shield" class="me-2"></i>
+                    开始使用
+                </a>
+                <a href="#" class="btn btn-outline-primary btn-lg">
+                    <i data-lucide="book-open" class="me-2"></i>
+                    查看文档
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- 页脚 -->
+    <footer class="footer bg-light">
+        <div class="container">
+            <div class="row gy-4">
+                <div class="col-lg-4">
+                    <div class="d-flex align-items-center mb-2">
+                        <i data-lucide="shield" class="me-2 text-primary"></i>
+                        <span class="fw-bold fs-4">NLP-SecLogAI</span>
+                    </div>
+                    <p class="text-secondary">智能安全日志分析平台</p>
+                </div>
+                <div class="col-6 col-lg-2">
+                    <h5 class="fw-bold mb-3">功能</h5>
+                    <ul class="list-unstyled">
+                        <li class="mb-2"><a href="/ai/ui" class="footer-link">AI异常检测</a></li>
+                        <li class="mb-2"><a href="/nlp/ui" class="footer-link">自然语言查询</a></li>
+                        <li class="mb-2"><a href="#" class="footer-link">分析报告</a></li>
+                    </ul>
+                </div>
+                <div class="col-6 col-lg-2">
+                    <h5 class="fw-bold mb-3">资源</h5>
+                    <ul class="list-unstyled">
+                        <li class="mb-2"><a href="#" class="footer-link">文档</a></li>
+                        <li class="mb-2"><a href="#" class="footer-link">API</a></li>
+                        <li class="mb-2"><a href="#" class="footer-link">常见问题</a></li>
+                    </ul>
+                </div>
+                <div class="col-lg-4">
+                    <h5 class="fw-bold mb-3">联系我们</h5>
+                    <p class="text-secondary">有任何问题或建议，请随时联系我们</p>
+                    <div class="d-flex gap-2">
+                        <a href="#" class="footer-link"><i data-lucide="github" width="24" height="24"></i></a>
+                        <a href="#" class="footer-link"><i data-lucide="mail" width="24" height="24"></i></a>
+                        <a href="#" class="footer-link"><i data-lucide="linkedin" width="24" height="24"></i></a>
+                    </div>
+                </div>
+            </div>
+            <hr class="my-4">
+            <div class="row">
+                <div class="col-md-6 text-center text-md-start">
+                    <p class="text-secondary mb-0">&copy; 2023 NLP-SecLogAI. 保留所有权利。</p>
+                </div>
+                <div class="col-md-6 text-center text-md-end">
+                    <a href="#" class="footer-link me-3">隐私政策</a>
+                    <a href="#" class="footer-link">使用条款</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Bootstrap JavaScript -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- AOS 动画库 -->
+    <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+    
+    <!-- 初始化脚本 -->
     <script>
-        $("#queryForm").submit(function(event) {
-            event.preventDefault();
-            let query = $("#queryInput").val();
-            $.post("/nlp/query", JSON.stringify({"query": query}), function(data) {
-                $("#results").html(JSON.stringify(data.results, null, 2));
+        // 初始化AOS动画库
+        document.addEventListener('DOMContentLoaded', function() {
+            AOS.init({
+                duration: 800,
+                once: true
             });
+            
+            // 初始化Lucide图标
+            lucide.createIcons();
+            
+            // 主题切换功能
+            const themeToggle = document.getElementById('themeToggle');
+            const htmlElement = document.documentElement;
+            const darkIcon = document.querySelector('.theme-icon-dark');
+            const lightIcon = document.querySelector('.theme-icon-light');
+            
+            // 检查本地存储中的主题偏好
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme) {
+                htmlElement.setAttribute('data-bs-theme', savedTheme);
+                updateThemeIcons(savedTheme);
+            }
+            
+            // 主题切换事件
+            themeToggle.addEventListener('click', function() {
+                const currentTheme = htmlElement.getAttribute('data-bs-theme');
+                const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+                
+                htmlElement.setAttribute('data-bs-theme', newTheme);
+                localStorage.setItem('theme', newTheme);
+                
+                updateThemeIcons(newTheme);
+            });
+            
+            // 更新主题图标
+            function updateThemeIcons(theme) {
+                if (theme === 'dark') {
+                    darkIcon.classList.remove('d-none');
+                    lightIcon.classList.add('d-none');
+                } else {
+                    darkIcon.classList.add('d-none');
+                    lightIcon.classList.remove('d-none');
+                }
+            }
         });
     </script>
 </body>
-</html>
+</html> 
