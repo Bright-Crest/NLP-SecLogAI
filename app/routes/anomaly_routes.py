@@ -1,8 +1,53 @@
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify,request
 from app.services.anomaly_detector import SSHRuleDetector,WebLogDetector,FirewallDetector,MySQLDetector,HDFSAnomalyDetector
 from app.models.db import get_db
 
 anomaly_bp = Blueprint("anomalies", __name__)
+
+@anomaly_bp.route('/stats')
+def get_statistics():
+    # log_type = request.args.get('type',"none")
+    # if log_type != "none":
+    #     # 示例数据结构，需替换为真实数据库查询
+    #     return jsonify({
+    #         "attack_types": [
+    #             {"type": "暴力破解", "count": 15},
+    #             {"type": "SQL注入", "count": 8}
+    #         ],
+    #         "time_series": [
+    #             {"hour": "00:00", "count": 3},
+    #             {"hour": "12:00", "count": 12}
+    #         ]
+    #     })
+    log_type = request.args.get('type')
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # 获取攻击类型分布（从对应异常表按type字段分组）
+    cursor.execute(f"""
+        SELECT anomaly_type as type, COUNT(*) as count 
+        FROM {log_type}_anomalies 
+        GROUP BY anomaly_type
+    """)
+    attack_types = [dict(row) for row in cursor.fetchall()]
+
+    # 获取时间趋势（按小时聚合）
+    cursor.execute(f"""
+        SELECT 
+            strftime('%H', timestamp) as hour, 
+            COUNT(*) as count 
+        FROM {log_type}_anomalies 
+        GROUP BY hour
+        ORDER BY hour
+    """)
+    time_series = [{'hour': row['hour'], 'count': row['count']} for row in cursor.fetchall()]
+
+    return jsonify({
+        "attack_types": attack_types,
+        "time_series": time_series
+    })
+
+
 
 @anomaly_bp.route("/detect/ssh", methods=["GET"])
 def detect_ssh_anomalies():
@@ -27,7 +72,7 @@ def detect_ssh_anomalies():
             ",".join(anomaly.get("countries", []))
         ))
     conn.commit()
-    
+    conn.close()
     return jsonify({
         "ssh_anomalies": anomalies,
         "count": len(anomalies)
@@ -62,6 +107,7 @@ def detect_web_anomalies():
             anomaly["reason"]
         ))
     conn.commit()
+    conn.close()
     return jsonify({"web_anomalies": anomalies})
 
 
@@ -76,7 +122,8 @@ def detect_firewall_anomalies():
     )
     
     # 存储到firewall_anomalies表
-    cursor = get_db().cursor()
+    conn = get_db()
+    cursor = conn.cursor()
     for anomaly in anomalies:
         cursor.execute("""
             INSERT INTO firewall_anomalies 
@@ -87,6 +134,8 @@ def detect_firewall_anomalies():
             anomaly["type"],
             anomaly["reason"]
         ))
+    conn.commit()
+    conn.close()
     return jsonify({"firewall_anomalies": anomalies})
 
 
@@ -102,7 +151,8 @@ def detect_mysql_anomalies():
     )
     
     # 存储到mysql_anomalies表
-    cursor = get_db().cursor()
+    conn = get_db()
+    cursor = conn.cursor()
     for anomaly in anomalies:
         cursor.execute("""
             INSERT INTO mysql_anomalies 
@@ -114,6 +164,8 @@ def detect_mysql_anomalies():
             anomaly["type"],
             anomaly["reason"]
         ))
+    conn.commit()
+    conn.close()
     return jsonify({"mysql_anomalies": anomalies})
 
 
@@ -141,7 +193,7 @@ def detect_HDFS_anomalies():
             anomaly["reason"]
         ))
     conn.commit()
-    
+    conn.close()
     return jsonify({
         "hdfs_anomalies": anomalies,
         "count": len(anomalies)

@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask,render_template
 #from flask_migrate import Migrate
 from app.models.db import  init_db
 import logging
@@ -13,6 +13,12 @@ app.config.update({
     'SQLALCHEMY_TRACK_MODIFICATIONS': False,
     'JSONIFY_PRETTYPRINT_REGULAR': True  # 美化JSON输出
 })
+
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
 
 # ---------- 2. 数据库初始化（兼容Flask-Migrate） ----------
 _first_request_handled = False

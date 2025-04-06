@@ -7,133 +7,162 @@ log_bp = Blueprint("logs", __name__)
 
 @log_bp.route("/upload", methods=["POST"])
 def upload_log():
-    data = request.json
-    log_line = data.get("log_content")
-    log_type = data.get("log_type")  # 区分日志类型
+    if 'file' not in request.files:
+        return jsonify({"status": "error", "message": "未选择文件"}), 400
+    
+    file = request.files['file']
+    log_type = request.form.get('log_type')
 
-    if log_type == "ssh":
-        parsed_log = SSHLogParser.parse(log_line)
-        if not parsed_log:
-            return jsonify({"status": "error", "message": "Invalid SSH log format"}), 400
-    elif log_type == "web":
-        parsed_log = WebLogParser.parse(log_line)
-        if not parsed_log:
-            return jsonify({"status": "error", "message": "Invalid web log format"}), 400
-    elif log_type == "firewall":
-        parsed_log = IptablesLogParser.parse(log_line)
-        if not parsed_log:
-            return jsonify({"status": "error", "message": "Invalid iptables log format"}), 400
-    elif log_type == "mysql":
-        parsed_log = MySQLLogParser.parse(log_line)
-        if not parsed_log:
-            return jsonify({"status": "error", "message": "Invalid MYSQL log format"}), 400
-    elif log_type == "hdfs":
-        parsed_log = HDFSLogParser().parse(log_line)
-        if not parsed_log:
-            return jsonify({"status": "error", "message": "Invalid HDFS log format"}), 400
-    elif log_type == "linux":
-        parsed_log = LINUXLogParser().parse(log_line)
-        if not parsed_log:
-            return jsonify({"status": "error", "message": "Invalid LINUX log format"}), 400
-    else:
-        return jsonify({"status": "error", "message": "Unsupported log type"}), 400
+    # data = request.json
+    # log_line = data.get("log_content")
+    # log_type = data.get("log_type")  # 区分日志类型
+    for log_line in file.stream.read().decode().splitlines():
+        # parsed_log = None
+        if log_type == "ssh":
+            parsed_log = SSHLogParser.parse(log_line)
+            if not parsed_log:
+                return jsonify({"status": "error", "message": "Invalid SSH log format"}), 400
+        elif log_type == "web":
+            parsed_log = WebLogParser.parse(log_line)
+            if not parsed_log:
+                return jsonify({"status": "error", "message": "Invalid web log format"}), 400
+        elif log_type == "firewall":
+            parsed_log = IptablesLogParser.parse(log_line)
+            if not parsed_log:
+                return jsonify({"status": "error", "message": "Invalid iptables log format"}), 400
+        elif log_type == "mysql":
+            parsed_log = MySQLLogParser.parse(log_line)
+            if not parsed_log:
+                return jsonify({"status": "error", "message": "Invalid MYSQL log format"}), 400
+        elif log_type == "hdfs":
+            parsed_log = HDFSLogParser().parse(log_line)
+            if not parsed_log:
+                return jsonify({"status": "error", "message": "Invalid HDFS log format"}), 400
+        elif log_type == "linux":
+            parsed_log = LINUXLogParser().parse(log_line)
+            if not parsed_log:
+                return jsonify({"status": "error", "message": "Invalid LINUX log format"}), 400
+        else:
+            return jsonify({"status": "error", "message": "Unsupported log type"}), 400
     
     
-    # 存储到数据库
-    conn = get_db()
-    cursor = conn.cursor()
-    # cursor.execute(""" DELETE FROM ssh_logs""")
-    # cursor.execute(""" DELETE FROM ssh_anomalies""")
-    if log_type == "ssh":
-        cursor.execute("""
-            INSERT INTO ssh_logs (
-                timestamp, process_id, event_type, 
-                user, source_ip, port,forwarded_ports,country_code
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            parsed_log["timestamp"],
-            parsed_log["process_id"],
-            parsed_log["event_type"],
-            parsed_log.get("user"),
-            parsed_log.get("source_ip"),
-            parsed_log.get("port"),
-            parsed_log.get("forwarded_ports"),
-            parsed_log.get("country_code")
-        ))
-    elif log_type == "web":
-        cursor.execute("""
-            INSERT INTO web_logs
-            (timestamp,source_ip, method, path,status_code,user_agent)
-            VALUES (?, ?, ?,?,?,?)
-        """, (
-            parsed_log["timestamp"],
-            parsed_log["source_ip"],
-            parsed_log["method"],
-            parsed_log["path"],
-            parsed_log["status_code"],
-            parsed_log["user_agent"]
-        ))
-    elif log_type == "firewall":
-        cursor.execute("""
-            INSERT INTO firewall_logs
-            (timestamp,source_ip, dest_ip, protocol,src_port,dest_port,action)
-            VALUES (?, ?, ?,?,?,?,?)
-        """, (
-            parsed_log["timestamp"],
-            parsed_log["source_ip"],
-            parsed_log["dest_ip"],
-            parsed_log["protocol"],
-            parsed_log["src_port"],
-            parsed_log["dest_port"],
-            parsed_log["action"]
-        ))       
-    elif log_type == "mysql":
-        cursor.execute("""
-            INSERT INTO mysql_logs
-            (timestamp,user, source_ip, event_type,sql_statement,duration)
-            VALUES (?, ?, ?,?,?,?)
-        """, (
-            parsed_log["timestamp"],
-            parsed_log["user"],
-            parsed_log["source_ip"],
-            parsed_log["event_type"],
-            parsed_log["sql_statement"],
-            parsed_log["duration"]
-        )) 
-    elif log_type == "hdfs":
-        cursor.execute("""
-            INSERT INTO hdfs_logs (
-                timestamp, pid, level, 
-                component, content, Eventid
-            ) VALUES (?, ?, ?, ?, ?, ?)
-        """, (
-            parsed_log["timestamp"],
-            parsed_log["pid"],
-            parsed_log.get("level"),
-            parsed_log.get("component"),
-            parsed_log.get("content"),
-            parsed_log.get("type")
-        ))
-    elif log_type == "linux":
-        cursor.execute("""
-            INSERT INTO linux_logs (
-                month,date,time,level,          
-                component,pid,content 
-            # ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (
-            parsed_log.get("month"),
-            parsed_log.get("date"),
-            parsed_log.get("time"),
-            parsed_log.get("level"),
-            parsed_log.get("component"),
-            parsed_log.get("pid"),
-            parsed_log.get("content")
-        ))
-    conn.commit()
-    
+        # 存储到数据库
+        conn = get_db()
+        cursor = conn.cursor()
+        # cursor.execute(""" DELETE FROM ssh_logs""")
+        # cursor.execute(""" DELETE FROM ssh_anomalies""")
+        if log_type == "ssh":
+            cursor.execute("""
+                INSERT INTO ssh_logs (
+                    timestamp, process_id, event_type, 
+                    user, source_ip, port,forwarded_ports,country_code
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                parsed_log["timestamp"],
+                parsed_log["process_id"],
+                parsed_log["event_type"],
+                parsed_log.get("user"),
+                parsed_log.get("source_ip"),
+                parsed_log.get("port"),
+                parsed_log.get("forwarded_ports"),
+                parsed_log.get("country_code")
+            ))
+        elif log_type == "web":
+            cursor.execute("""
+                INSERT INTO web_logs
+                (timestamp,source_ip, method, path,status_code,user_agent)
+                VALUES (?, ?, ?,?,?,?)
+            """, (
+                parsed_log["timestamp"],
+                parsed_log["source_ip"],
+                parsed_log["method"],
+                parsed_log["path"],
+                parsed_log["status_code"],
+                parsed_log["user_agent"]
+            ))
+        elif log_type == "firewall":
+            cursor.execute("""
+                INSERT INTO firewall_logs
+                (timestamp,source_ip, dest_ip, protocol,src_port,dest_port,action)
+                VALUES (?, ?, ?,?,?,?,?)
+            """, (
+                parsed_log["timestamp"],
+                parsed_log["source_ip"],
+                parsed_log["dest_ip"],
+                parsed_log["protocol"],
+                parsed_log["src_port"],
+                parsed_log["dest_port"],
+                parsed_log["action"]
+            ))       
+        elif log_type == "mysql":
+            cursor.execute("""
+                INSERT INTO mysql_logs
+                (timestamp,user, source_ip, event_type,sql_statement,duration)
+                VALUES (?, ?, ?,?,?,?)
+            """, (
+                parsed_log["timestamp"],
+                parsed_log["user"],
+                parsed_log["source_ip"],
+                parsed_log["event_type"],
+                parsed_log["sql_statement"],
+                parsed_log["duration"]
+            )) 
+        elif log_type == "hdfs":
+            cursor.execute("""
+                INSERT INTO hdfs_logs (
+                    timestamp, pid, level, 
+                    component, content, Eventid
+                ) VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                parsed_log["timestamp"],
+                parsed_log["pid"],
+                parsed_log.get("level"),
+                parsed_log.get("component"),
+                parsed_log.get("content"),
+                parsed_log.get("type")
+            ))
+        elif log_type == "linux":
+            cursor.execute("""
+                INSERT INTO linux_logs (
+                    month,date,time,level,          
+                    component,pid,content 
+                # ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                parsed_log.get("month"),
+                parsed_log.get("date"),
+                parsed_log.get("time"),
+                parsed_log.get("level"),
+                parsed_log.get("component"),
+                parsed_log.get("pid"),
+                parsed_log.get("content")
+            ))
+        conn.commit()
+        conn.close()
     return jsonify({"status": "success"})
 
 # from ..models.db import get_db_connection
+
+# 新增时间趋势统计接口
+@log_bp.route('/stats')
+def get_log_time_stats():
+    log_type = request.args.get('type')
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # 按小时统计日志数量
+    cursor.execute(f"""
+        SELECT 
+            strftime('%H', timestamp) as hour, 
+            COUNT(*) as count 
+        FROM {log_type}_logs 
+        GROUP BY hour
+        ORDER BY hour
+    """)
+    
+    return jsonify([
+        {"hour": row[0], "count": row[1]} 
+        for row in cursor.fetchall()
+    ])
 
 
 @log_bp.route("/upload2", methods=["POST"])

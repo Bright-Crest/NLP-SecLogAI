@@ -50,11 +50,12 @@ class SSHLogParser:
         
         # 非法用户尝试
         if "Invalid user" in message:
-            return {
-                "event_type": "invalid_user",
-                "user": re.search(r"Invalid user (\w+)", message).group(1),
-                "source_ip": re.search(r"from (\d+\.\d+\.\d+\.\d+)", message).group(1)
-            }
+            if re.search(r"Invalid user (\w+)", message)!= None:
+                return {
+                    "event_type": "invalid_user",
+                    "user": re.search(r"Invalid user (\w+)", message).group(1),
+                    "source_ip": re.search(r"from (\d+\.\d+\.\d+\.\d+)", message).group(1)
+                }
         
         # 连接关闭
         if "Connection closed" in message:
