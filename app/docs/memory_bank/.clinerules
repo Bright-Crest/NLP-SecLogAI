@@ -1,0 +1,172 @@
+# NLP-SecLogAI 项目规则和模式
+
+## 代码风格和约定
+
+### Python代码规范
+- 遵循PEP 8编码规范
+- 使用4空格缩进（不使用制表符）
+- 最大行长度为100字符
+- 类名使用CamelCase命名法
+- 函数和变量使用snake_case命名法
+- 常量使用大写SNAKE_CASE命名法
+- 使用类型注解(type hints)增强代码可读性
+
+```python
+# 代码示例
+from typing import List, Dict, Optional
+
+def parse_log_entry(raw_log: str, format_type: str = "syslog") -> Optional[Dict[str, any]]:
+    """
+    解析单条日志条目为结构化字典格式。
+    
+    Args:
+        raw_log: 原始日志文本
+        format_type: 日志格式类型，默认为syslog
+        
+    Returns:
+        解析后的字典或None（如果解析失败）
+    """
+    # 实现代码
+    pass
+```
+
+### 导入顺序约定
+导入语句应按以下顺序排列：
+1. 标准库导入
+2. 第三方库导入
+3. 本地应用/库导入
+各组之间用空行分隔。
+
+```python
+# 标准库
+import os
+import json
+from datetime import datetime
+
+# 第三方库
+import numpy as np
+import pandas as pd
+from flask import Flask, request
+
+# 本地模块
+from app.models import LogEntry
+from app.services.parser import LogParser
+```
+
+### 文档规范
+- 所有公共模块、类和方法必须有文档字符串
+- 使用Google风格的docstring格式
+- 包含参数、返回值和异常说明
+- 复杂逻辑应添加注释说明
+
+### 测试约定
+- 单元测试文件命名规则: `test_<module_name>.py`
+- 测试类命名规则: `Test<ClassBeingTested>`
+- 测试方法命名规则: `test_<method_name>_<scenario>`
+- 使用pytest作为测试框架
+- 目标代码覆盖率至少80%
+
+## 项目结构偏好
+
+### 目录组织
+```
+app/
+  ├── __init__.py
+  ├── app.py               # 应用入口
+  ├── config.py            # 配置文件
+  ├── routes/              # API路由
+  │   ├── __init__.py
+  │   ├── auth_routes.py
+  │   ├── log_routes.py
+  │   └── ...
+  ├── models/              # 数据模型
+  │   ├── __init__.py
+  │   ├── user.py
+  │   ├── log_entry.py
+  │   └── ...
+  ├── services/            # 业务逻辑
+  │   ├── __init__.py
+  │   ├── parser_service.py
+  │   ├── analysis_service.py
+  │   └── ...
+  ├── utils/               # 工具函数
+  │   ├── __init__.py
+  │   ├── helpers.py
+  │   └── ...
+  └── templates/           # 前端模板
+      ├── layout.html
+      ├── dashboard.html
+      └── ...
+```
+
+### 依赖管理
+- 使用requirements.txt管理Python依赖
+- 所有依赖必须指定确切版本号
+- 开发依赖与生产依赖分离（requirements-dev.txt）
+- 使用虚拟环境进行开发(.venv)
+
+## 工作流程和最佳实践
+
+### Git工作流
+- 主分支: `main` (生产就绪代码)
+- 开发分支: `develop` (集成最新功能)
+- 功能分支命名: `feature/<feature-name>`
+- 修复分支命名: `bugfix/<issue-number>`
+- 发布分支命名: `release/v<version>`
+- Commit消息格式: `<type>: <description>` (type可以是feat, fix, docs, style, refactor, test, chore)
+
+### Pull Request规则
+- PR必须有清晰的描述
+- 必须通过CI检查和测试
+- 需要至少一位其他开发者的代码审查
+- 合并前PR分支应与目标分支保持同步
+
+### 部署流程
+- 开发环境: 手动部署develop分支
+- 测试环境: 自动部署被合并到develop的PR
+- 生产环境: 手动部署main分支标记的版本
+
+## NLP-SecLogAI 特定规则
+
+### 日志处理约定
+- 日志数据视为不可变对象，原始日志内容必须保留
+- 处理结果应存储为原始日志的补充，而非替代
+- 大型日志处理应实现流式处理
+- 复杂处理任务应设计为可恢复的多阶段管道
+
+### 安全考虑
+- 所有用户输入必须验证和清洗
+- 敏感配置信息通过环境变量传递，不硬编码
+- 遵循最小权限原则设计API
+- 审计重要操作并保留操作日志
+- 密码必须使用Argon2id或bcrypt哈希存储
+
+### AI模型管理
+- 训练好的模型存储在`models/trained/`目录
+- 模型元数据（训练日期、准确度等）记录在模型配置文件中
+- 模型版本控制遵循语义化版本规范
+- 评估结果必须包含准确率、召回率、F1分数和混淆矩阵
+
+### 性能优化
+- 数据库查询必须添加适当的索引
+- 对频繁访问的数据实施缓存策略
+- 可能长时间运行的操作应设计为异步任务
+- 大量数据应实现分页加载
+- 监控和记录查询性能，针对慢查询进行优化
+
+## 文档维护规则
+
+### Memory Bank文档更新时机
+- 项目设计发生重大变更时
+- 添加或移除关键功能时
+- 项目目标或范围调整时
+- 定期审查（至少每两周一次）
+- 解决关键技术债务后
+
+### 文档更新流程
+1. 创建文档变更分支
+2. 更新相关文档
+3. 提交审查
+4. 合并到main分支
+
+以上规则和模式将帮助维护项目的一致性和质量，确保开发过程高效且可预测。 
