@@ -1,0 +1,53 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+
+# 虚拟环境
+# 保留.env文件用于Docker环境变量
+# .env
+.venv
+env/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 日志
+*.log
+
+# 数据库
+# *.db
+# *.sqlite3
+
+# 测试
+tests/
+
+# 备份和临时文件
+.bak/
+*.bak
+
+# Docker相关文件
+Dockerfile
+.dockerignore
+
+# 其他非必要文件
+.DS_Store
+# 保留README.md等文档
+# *.md 
