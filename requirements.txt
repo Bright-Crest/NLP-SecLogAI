@@ -9,10 +9,14 @@ matplotlib
 pandas
 tqdm
 seaborn
+requests
+pydantic
+python-dotenv
+openrouter>=1.0.0
+flask-cors
 # 测试依赖
 pytest
 pytest-cov
 pytest-mock
 pytest-flask
 coverage
-requests

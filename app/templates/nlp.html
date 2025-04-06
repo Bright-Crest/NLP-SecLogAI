@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>安全日志分析系统</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .query-section {
+            margin-bottom: 30px;
+        }
+        .query-input {
+            width: 80%;
+            padding: 10px;
+            font-size: 16px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .query-button {
+            padding: 10px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .query-button:hover {
+            background-color: #45a049;
+        }
+        .results-section {
+            margin-top: 20px;
+        }
+        .sql-display {
+            background-color: #f8f8f8;
+            padding: 10px;
+            border-radius: 4px;
+            border-left: 3px solid #4CAF50;
+            font-family: monospace;
+            white-space: pre-wrap;
+            margin-bottom: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>基于NLP的安全日志分析系统</h1>
+        
+        <div class="query-section">
+            <h2>日志查询</h2>
+            <p>使用自然语言进行日志查询（例如："最近24小时admin登录失败次数"）</p>
+            <input type="text" id="queryInput" class="query-input" placeholder="输入查询语句">
+            <button id="queryButton" class="query-button">查询</button>
+        </div>
+        
+        <div class="results-section" id="resultsSection" style="display: none;">
+            <h2>查询结果</h2>
+            <div>
+                <h3>生成的SQL</h3>
+                <div id="sqlDisplay" class="sql-display"></div>
+            </div>
+            <div>
+                <h3>查询结果</h3>
+                <div id="resultsTable"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('queryButton').addEventListener('click', function() {
+            const query = document.getElementById('queryInput').value;
+            if (!query) {
+                alert('请输入查询语句');
+                return;
+            }
+            
+            // 显示加载中
+            document.getElementById('resultsSection').style.display = 'block';
+            document.getElementById('sqlDisplay').textContent = '查询中...';
+            document.getElementById('resultsTable').innerHTML = '';
+            
+            // 发送API请求
+            fetch('/nlp/query', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    query: query
+                }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                // 显示SQL
+                document.getElementById('sqlDisplay').textContent = data.sql;
+                
+                // 显示结果
+                const resultsTable = document.getElementById('resultsTable');
+                
+                if (data.error) {
+                    resultsTable.innerHTML = `<p style="color: red;">${data.error}</p>`;
+                    return;
+                }
+                
+                if (data.results.length === 0) {
+                    resultsTable.innerHTML = '<p>没有查询到结果</p>';
+                    return;
+                }
+                
+                // 创建表格
+                let tableHTML = '<table><thead><tr>';
+                
+                // 添加表头
+                const firstRow = data.results[0];
+                for (const key in firstRow) {
+                    tableHTML += `<th>${key}</th>`;
+                }
+                tableHTML += '</tr></thead><tbody>';
+                
+                // 添加数据行
+                data.results.forEach(row => {
+                    tableHTML += '<tr>';
+                    for (const key in firstRow) {
+                        tableHTML += `<td>${row[key] !== null ? row[key] : ''}</td>`;
+                    }
+                    tableHTML += '</tr>';
+                });
+                
+                tableHTML += '</tbody></table>';
+                resultsTable.innerHTML = tableHTML;
+            })
+            .catch(error => {
+                document.getElementById('resultsTable').innerHTML = `<p style="color: red;">请求错误: ${error}</p>`;
+            });
+        });
+        
+        // 按回车键查询
+        document.getElementById('queryInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                document.getElementById('queryButton').click();
+            }
+        });
+    </script>
+</body>
+</html> 
