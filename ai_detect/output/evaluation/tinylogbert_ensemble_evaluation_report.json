@@ -1,0 +1,49 @@
+{
+  "model_name": "tinylogbert_ensemble",
+  "timestamp": "2025-04-05 20:40:08",
+  "num_samples": 512,
+  "threshold": 0.583766821026802,
+  "num_anomalies": 26,
+  "anomaly_ratio": 0.05078125,
+  "suggestions": [
+    "考虑提高异常阈值，当前阈值可能过低",
+    "建议尝试其他检测方法或调整特征提取"
+  ],
+  "metrics": {
+    "distribution": {
+      "mean": 0.3387704216875136,
+      "median": 0.3344740569591522,
+      "std": 0.13208117422898333,
+      "min": 0.04147644340991974,
+      "max": 0.9791979789733887,
+      "range": 0.9377215355634689,
+      "percentile_95": 0.583766821026802,
+      "percentile_99": 0.7339622962474822,
+      "skewness": 0.9246092977993801,
+      "kurtosis": 2.452352548898433,
+      "iqr": 0.15037410706281662,
+      "entropy": 3.998035874083667,
+      "separation_index": 4.848742154393585
+    },
+    "consistency": {
+      "features_provided": true,
+      "timestamps_provided": true,
+      "texts_provided": true,
+      "score_entropy": 3.998035874083667,
+      "coefficient_of_variation": 0.38988402096044966,
+      "lof_score": -0.984375
+    }
+  },
+  "assessment": {
+    "grade": "一般",
+    "score": 45,
+    "summary": "模型表现一般，检测效果有限，可能需要调整",
+    "factors": [
+      "分数分布呈现右偏趋势，对异常检测有一定帮助",
+      "分数熵较高，分数分布较为混乱，难以区分正常和异常",
+      "异常比例为5.08%，略高，可能需要提高阈值",
+      "分数变异系数适中，模型有一定的区分能力",
+      "LOF得分一般，异常样本在特征空间中的离群特性不太明显"
+    ]
+  }
+}

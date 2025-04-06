@@ -151,3 +151,66 @@ AND user = 'admin'
 ## 许可证
 
 本项目采用 MIT 许可证 - 详情请参阅 [LICENSE](LICENSE) 文件。
+
+# TinyLogBERT 模型改进
+
+本次更新对日志异常检测模型 TinyLogBERT 进行了多项增强，主要包括以下改进：
+
+## 1. 动量对比学习（基于MoCo架构）
+
+- **动量编码器（Momentum Encoder）**：
+  - 添加了动量编码器作为"key encoder"，降低对比学习中的特征不一致性
+  - 实现平滑更新策略，帮助模型更稳定地学习表示
+
+- **特征队列（Queue）**：
+  - 维护一个大小为4096的特征队列，提供更多的负样本
+  - 采用先进先出策略动态更新队列，使模型能看到更多样本
+
+## 2. 多视角正样本对生成
+
+- **数据增强策略**：
+  - 实现了三种增强策略：随机删除、随机替换和随机打乱
+  - 对同一日志生成语义相似但表达不同的变体，作为正样本对
+
+## 3. 可训练温度参数
+
+- 将对比学习中的温度参数τ设计为可学习参数
+- 引入对温度参数的约束，确保其在合理范围内（0.05至0.5）
+- 实现自适应调整，使模型能够自动找到最佳的对比强度
+
+## 4. 增强的异常评分机制
+
+- **融合对比距离**：
+  - 将样本与队列中样本的对比距离纳入异常评分
+  - 使用加权融合策略，结合传统异常分数和对比距离
+  - 显著提高了对异常样本的检测能力
+
+## 5. 改进的训练流程
+
+- **自定义数据集类**：实现支持对比学习的`ContrastiveLogDataset`
+- **自定义数据校对器**：实现`ContrastiveMLMCollator`处理增强数据
+- **自定义训练器**：实现`ContrastiveTrainer`处理MoCo风格训练逻辑
+
+## 性能改进
+
+- 更准确的异常检测结果，尤其对于复杂和边界情况
+- 更稳定的训练过程，减少了表示学习中的波动
+- 增强了模型对未见日志模式的泛化能力
+
+## 使用示例
+
+```python
+# 创建并训练改进后的模型
+detector = AnomalyDetector()
+detector.train(
+    train_file="logs/train.log",
+    eval_file="logs/eval.log",
+    enable_contrastive=True,  # 启用对比学习
+    enable_augmentation=True  # 启用数据增强
+)
+
+# 评估模型性能
+results = detector.evaluate("logs/test.jsonl")
+print(f"AUC: {results['auc']}")
+print(f"对比学习AUC: {results.get('contrastive_auc', 'N/A')}")
+```

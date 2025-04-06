@@ -1,0 +1,28 @@
+# ai_detect文件夹规则
+
+# --- DATASET ---
+# 忽略 dataset 下所有内容
+dataset/*
+# 取消忽略 dataset/Linux/Linux.log 文件
+!dataset/Linux/
+dataset/Linux/*
+!dataset/Linux/Linux.log
+
+# --- OUTPUT ---
+# 忽略 output 下所有内容
+output/*
+# 取消忽略 output/evaluation 目录
+!output/evaluation/
+!output/evaluation/*
+
+# --- CHECKPOINT ---
+checkpoint/*
+# 忽略所有以 checkpoint- 开头的目录
+checkpoint-*/
+# 保留 checkpoint/config.json 文件
+!checkpoint/config.json
+!checkpoint/model.safetensors
+!checkpoint/detectors/
+!checkpoint/detectors/*.json
+!checkpoint/tokenizer/
+!checkpoint/tokenizer/*.json

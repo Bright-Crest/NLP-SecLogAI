@@ -1,7 +1,3 @@
-dataset/
-output/
-checkpoint/
-
 # Python
 __pycache__/
 *.py[cod]
