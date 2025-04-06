@@ -1048,7 +1048,7 @@ UNION
             return queries[0]
 
 
-def convert_to_sql(query_text: str) -> str:
+def convert_to_sql(query_text: str, table_schema=None) -> str:
     """
     将自然语言查询转换为SQL查询
     
@@ -1058,6 +1058,6 @@ def convert_to_sql(query_text: str) -> str:
     Returns:
         SQL查询字符串
     """
-    converter = NL2SQLConverter()
+    converter = NL2SQLConverter(table_schema=table_schema)
     result = converter.convert(query_text)
     return result["sql"] 

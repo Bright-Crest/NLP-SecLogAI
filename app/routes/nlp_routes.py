@@ -8,9 +8,12 @@ NLP路由模块
 
 from flask import Blueprint, request, jsonify
 from services.nlp_processor import NL2SQLConverter
-from models.db import get_db
+from models.db import get_db, TABLE_SCHEMA
 
 nlp_bp = Blueprint("nlp", __name__)
+
+converter = NL2SQLConverter(table_schema=TABLE_SCHEMA)
+
 
 @nlp_bp.route("/query", methods=["POST"])
 def nlp_query():
@@ -39,7 +42,6 @@ def nlp_query():
         return jsonify({"error": "缺少查询参数"}), 400
     
     # 使用NL2SQL转换器解析自然语言查询
-    converter = NL2SQLConverter()
     result = converter.convert(user_query)
     sql_query = result["sql"]
     

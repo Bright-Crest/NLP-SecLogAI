@@ -4,6 +4,139 @@ from flask import current_app
 
 DB_NAME = "logs.db"
 
+TABLE_SCHEMA = {
+                "ssh_logs": {
+                    "columns": [
+                        {"name": "id", "type": "INTEGER", "description": "SSH日志唯一ID"},
+                        {"name": "timestamp", "type": "DATETIME", "description": "日志时间戳"},
+                        {"name": "process_id", "type": "INTEGER", "description": "进程ID"},
+                        {"name": "event_type", "type": "TEXT", "description": "事件类型"},
+                        {"name": "user", "type": "TEXT", "description": "用户名"},
+                        {"name": "source_ip", "type": "TEXT", "description": "来源IP地址"},
+                        {"name": "port", "type": "INTEGER", "description": "端口号"},
+                        {"name": "country_code", "type": "TEXT", "description": "国家代码"},
+                        {"name": "forwarded_ports", "type": "TEXT", "description": "端口转发信息(JSON格式)"}
+                    ]
+                },
+                "ssh_anomalies": {
+                    "columns": [
+                        {"name": "id", "type": "INTEGER", "description": "SSH异常唯一ID"},
+                        {"name": "timestamp", "type": "DATETIME", "description": "异常检测时间"},
+                        {"name": "source_ip", "type": "TEXT", "description": "来源IP地址"},
+                        {"name": "anomaly_type", "type": "TEXT", "description": "异常类型"},
+                        {"name": "details", "type": "TEXT", "description": "异常详情"},
+                        {"name": "user", "type": "TEXT", "description": "关联用户"},
+                        {"name": "country_codes", "type": "TEXT", "description": "国家代码"}
+                    ]
+                },
+                "web_logs": {
+                    "columns": [
+                        {"name": "id", "type": "INTEGER", "description": "Web日志唯一ID"},
+                        {"name": "timestamp", "type": "DATETIME", "description": "日志时间戳"},
+                        {"name": "source_ip", "type": "TEXT", "description": "来源IP地址"},
+                        {"name": "method", "type": "TEXT", "description": "HTTP方法"},
+                        {"name": "path", "type": "TEXT", "description": "请求路径"},
+                        {"name": "status_code", "type": "INTEGER", "description": "HTTP状态码"},
+                        {"name": "user_agent", "type": "TEXT", "description": "用户代理"}
+                    ]
+                },
+                "web_anomalies": {
+                    "columns": [
+                        {"name": "id", "type": "INTEGER", "description": "Web异常唯一ID"},
+                        {"name": "timestamp", "type": "DATETIME", "description": "异常检测时间"},
+                        {"name": "source_ip", "type": "TEXT", "description": "来源IP地址"},
+                        {"name": "anomaly_type", "type": "TEXT", "description": "异常类型"},
+                        {"name": "details", "type": "TEXT", "description": "异常详情"}
+                    ]
+                },
+                "firewall_logs": {
+                    "columns": [
+                        {"name": "id", "type": "INTEGER", "description": "防火墙日志唯一ID"},
+                        {"name": "timestamp", "type": "DATETIME", "description": "日志时间戳"},
+                        {"name": "source_ip", "type": "TEXT", "description": "源IP地址"},
+                        {"name": "dest_ip", "type": "TEXT", "description": "目标IP地址"},
+                        {"name": "protocol", "type": "TEXT", "description": "协议"},
+                        {"name": "src_port", "type": "INTEGER", "description": "源端口"},
+                        {"name": "dest_port", "type": "INTEGER", "description": "目标端口"},
+                        {"name": "action", "type": "TEXT", "description": "防火墙动作"}
+                    ]
+                },
+                "firewall_anomalies": {
+                    "columns": [
+                        {"name": "id", "type": "INTEGER", "description": "防火墙异常唯一ID"},
+                        {"name": "timestamp", "type": "DATETIME", "description": "异常检测时间"},
+                        {"name": "source_ip", "type": "TEXT", "description": "来源IP地址"},
+                        {"name": "anomaly_type", "type": "TEXT", "description": "异常类型"},
+                        {"name": "details", "type": "TEXT", "description": "异常详情"}
+                    ]
+                },
+                "mysql_logs": {
+                    "columns": [
+                        {"name": "id", "type": "INTEGER", "description": "MySQL日志唯一ID"},
+                        {"name": "timestamp", "type": "DATETIME", "description": "日志时间戳"},
+                        {"name": "user", "type": "TEXT", "description": "数据库用户"},
+                        {"name": "source_ip", "type": "TEXT", "description": "来源IP地址"},
+                        {"name": "event_type", "type": "TEXT", "description": "事件类型"},
+                        {"name": "sql_statement", "type": "TEXT", "description": "SQL语句"},
+                        {"name": "duration", "type": "FLOAT", "description": "执行时间(秒)"}
+                    ]
+                },
+                "mysql_anomalies": {
+                    "columns": [
+                        {"name": "id", "type": "INTEGER", "description": "MySQL异常唯一ID"},
+                        {"name": "timestamp", "type": "DATETIME", "description": "异常检测时间"},
+                        {"name": "user", "type": "TEXT", "description": "数据库用户"},
+                        {"name": "source_ip", "type": "TEXT", "description": "来源IP地址"},
+                        {"name": "anomaly_type", "type": "TEXT", "description": "异常类型"},
+                        {"name": "details", "type": "TEXT", "description": "异常详情"}
+                    ]
+                },
+                "hdfs_logs": {
+                    "columns": [
+                        {"name": "id", "type": "INTEGER", "description": "HDFS日志唯一ID"},
+                        {"name": "timestamp", "type": "DATETIME", "description": "日志时间戳"},
+                        {"name": "pid", "type": "INTEGER", "description": "进程ID"},
+                        {"name": "level", "type": "TEXT", "description": "日志级别"},
+                        {"name": "component", "type": "TEXT", "description": "日志组件"},
+                        {"name": "content", "type": "TEXT", "description": "日志内容"},
+                        {"name": "Eventid", "type": "TEXT", "description": "事件ID"}
+                    ]
+                },
+                "hdfs_anomalies": {
+                    "columns": [
+                        {"name": "id", "type": "INTEGER", "description": "HDFS异常唯一ID"},
+                        {"name": "timestamp", "type": "DATETIME", "description": "异常检测时间"},
+                        {"name": "pid", "type": "INTEGER", "description": "关联进程ID"},
+                        {"name": "anomaly_type", "type": "TEXT", "description": "异常类型"},
+                        {"name": "details", "type": "TEXT", "description": "异常详情"}
+                    ]
+                },
+                "linux_logs": {
+                    "columns": [
+                        {"name": "id", "type": "INTEGER", "description": "Linux系统日志唯一ID"},
+                        {"name": "month", "type": "TEXT", "description": "月份"},
+                        {"name": "date", "type": "INTEGER", "description": "日期"},
+                        {"name": "time", "type": "TEXT", "description": "时间"},
+                        {"name": "level", "type": "TEXT", "description": "日志级别"},
+                        {"name": "component", "type": "TEXT", "description": "日志组件"},
+                        {"name": "pid", "type": "INTEGER", "description": "进程ID"},
+                        {"name": "content", "type": "TEXT", "description": "日志内容"}
+                    ]
+                },
+                "linux_anomalies": {
+                    "columns": [
+                        {"name": "id", "type": "INTEGER", "description": "Linux异常唯一ID"},
+                        {"name": "timestamp", "type": "DATETIME", "description": "异常检测时间"},
+                        {"name": "component", "type": "TEXT", "description": "日志组件"},
+                        {"name": "pid", "type": "INTEGER", "description": "关联进程ID"},
+                        {"name": "detected", "type": "TEXT", "description": "检测方式标记"},
+                        {"name": "anomaly_type", "type": "TEXT", "description": "异常类型"},
+                        {"name": "details", "type": "TEXT", "description": "异常详情"}
+                    ]
+                }
+}
+
+
 def get_db():
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
