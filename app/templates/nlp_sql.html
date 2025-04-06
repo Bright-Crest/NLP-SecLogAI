@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-bs-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>自然语言转SQL查询</title>
+    
+    <!-- Bootstrap 5 CDN -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Lucide 图标 CDN -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- 代码高亮 Prism.js -->
+    <link href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-okaidia.min.css" rel="stylesheet">
+    
+    <style>
+        :root {
+            --primary-color: #0d6efd;
+            --success-color: #198754;
+            --warning-color: #ffc107;
+            --danger-color: #dc3545;
+            --card-border-radius: 0.5rem;
+            --transition-speed: 0.3s;
+        }
+        
+        body {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .navbar-brand {
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+        
+        .nlp-card {
+            border-radius: var(--card-border-radius);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            transition: all var(--transition-speed) ease;
+        }
+        
+        .nlp-card:hover {
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
+            transform: translateY(-2px);
+        }
+        
+        #queryInput {
+            height: 100px;
+            resize: none;
+        }
+        
+        .result-panel {
+            transition: opacity var(--transition-speed) ease;
+        }
+        
+        .sql-container {
+            position: relative;
+            margin: 1rem 0;
+            border-radius: 0.5rem;
+            overflow: hidden;
+        }
+        
+        .sql-container pre {
+            margin: 0;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .sql-container .copy-btn {
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+            opacity: 0.7;
+            transition: opacity 0.2s;
+        }
+        
+        .sql-container .copy-btn:hover {
+            opacity: 1;
+        }
+        
+        .example-query {
+            cursor: pointer;
+            padding: 0.5rem;
+            border-radius: 0.25rem;
+            margin-bottom: 0.5rem;
+            transition: background-color 0.2s;
+        }
+        
+        .example-query:hover {
+            background-color: rgba(13, 110, 253, 0.1);
+        }
+        
+        .page-spinner {
+            width: 3rem;
+            height: 3rem;
+        }
+        
+        footer {
+            margin-top: auto;
+            padding: 1rem 0;
+        }
+        
+        #historyList {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .history-item {
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        .history-item:hover {
+            background-color: rgba(0, 0, 0, 0.05);
+        }
+        
+        .results-table {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        /* 暗黑模式兼容性 */
+        [data-bs-theme="dark"] .example-query:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+        
+        [data-bs-theme="dark"] .history-item:hover {
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+    </style>
+</head>
+<body>
+    <!-- 导航栏 -->
+    <nav class="navbar navbar-expand-lg bg-primary navbar-dark">
+        <div class="container">
+            <a class="navbar-brand" href="#">
+                <i data-lucide="database" class="me-2"></i>
+                自然语言转SQL查询
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/">首页</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="#querySection">查询</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#historySection">历史记录</a>
+                    </li>
+                    <li class="nav-item">
+                        <button class="btn btn-outline-light ms-2" id="themeToggle">
+                            <i data-lucide="moon" class="theme-icon-dark d-none"></i>
+                            <i data-lucide="sun" class="theme-icon-light"></i>
+                        </button>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container py-4">
+        <!-- 内容区域 -->
+        <div class="row mb-4">
+            <div class="col">
+                <div class="alert alert-info d-flex align-items-center" role="alert">
+                    <i data-lucide="info" class="me-2"></i>
+                    <div>
+                        输入自然语言问题，如"最近24小时登录失败次数"，系统将自动转换为SQL查询并执行。
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 主查询区域 -->
+        <div class="row" id="querySection">
+            <div class="col-lg-8">
+                <div class="card nlp-card">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="card-title mb-0">
+                            <i data-lucide="search" class="me-2"></i>
+                            自然语言查询
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-floating mb-3">
+                            <textarea class="form-control" id="queryInput" placeholder="输入自然语言查询"></textarea>
+                            <label for="queryInput">输入您的问题（例如：最近24小时admin登录失败次数）</label>
+                        </div>
+                        
+                        <div class="d-flex justify-content-between">
+                            <button id="executeBtn" class="btn btn-primary">
+                                <i data-lucide="play" class="me-1"></i>
+                                执行查询
+                            </button>
+                            <button id="clearBtn" class="btn btn-outline-secondary">
+                                <i data-lucide="trash-2" class="me-1"></i>
+                                清空
+                            </button>
+                        </div>
+                        
+                        <!-- 结果面板 -->
+                        <div id="resultPanel" class="mt-4 result-panel" style="display:none; opacity:0;">
+                            <h5 class="border-bottom pb-2 mb-3">查询结果</h5>
+                            
+                            <!-- SQL查询 -->
+                            <div>
+                                <h6>生成的SQL：</h6>
+                                <div class="sql-container">
+                                    <pre><code id="sqlCode" class="language-sql"></code></pre>
+                                    <button class="btn btn-sm btn-outline-secondary copy-btn" id="copySqlBtn">
+                                        <i data-lucide="copy" class="me-1"></i>
+                                        复制
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- 查询结果 -->
+                            <div>
+                                <h6>查询结果：</h6>
+                                <div class="results-table table-responsive">
+                                    <table class="table table-striped table-hover">
+                                        <thead id="resultTableHead"></thead>
+                                        <tbody id="resultTableBody"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 加载指示器 -->
+                        <div id="loadingIndicator" class="text-center my-4" style="display:none;">
+                            <div class="spinner-border text-primary page-spinner" role="status">
+                                <span class="visually-hidden">加载中...</span>
+                            </div>
+                            <p class="mt-2">正在处理查询...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 示例和提示 -->
+            <div class="col-lg-4">
+                <div class="card nlp-card">
+                    <div class="card-header bg-secondary text-white">
+                        <h5 class="card-title mb-0">
+                            <i data-lucide="list" class="me-2"></i>
+                            查询示例
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small">点击示例添加到查询框</p>
+                        <div class="example-queries">
+                            <div class="example-query" data-query="最近24小时admin登录失败次数">
+                                <i data-lucide="arrow-right" class="me-1"></i>
+                                最近24小时admin登录失败次数
+                            </div>
+                            <div class="example-query" data-query="今天所有error级别的日志">
+                                <i data-lucide="arrow-right" class="me-1"></i>
+                                今天所有error级别的日志
+                            </div>
+                            <div class="example-query" data-query="上周每天的登录成功率">
+                                <i data-lucide="arrow-right" class="me-1"></i>
+                                上周每天的登录成功率
+                            </div>
+                            <div class="example-query" data-query="IP地址10.0.0.1的活动记录">
+                                <i data-lucide="arrow-right" class="me-1"></i>
+                                IP地址10.0.0.1的活动记录
+                            </div>
+                            <div class="example-query" data-query="昨天有哪些用户尝试了非法访问">
+                                <i data-lucide="arrow-right" class="me-1"></i>
+                                昨天有哪些用户尝试了非法访问
+                            </div>
+                        </div>
+                        
+                        <hr>
+                        
+                        <h6 class="mt-3">支持的查询类型</h6>
+                        <ul class="small">
+                            <li>时间范围查询（今天、昨天、过去24小时、上周等）</li>
+                            <li>特定用户或IP的活动</li>
+                            <li>日志级别筛选（error、warning、info等）</li>
+                            <li>统计分析（登录次数、失败率、活跃用户等）</li>
+                            <li>安全事件（非法访问、异常登录等）</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 历史记录 -->
+        <div class="row mt-4" id="historySection">
+            <div class="col-12">
+                <div class="card nlp-card">
+                    <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">
+                            <i data-lucide="history" class="me-2"></i>
+                            查询历史
+                        </h5>
+                        <button id="clearHistoryBtn" class="btn btn-sm btn-outline-light">
+                            <i data-lucide="trash" class="me-1"></i>
+                            清空历史
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="list-group" id="historyList">
+                            <!-- 历史记录将动态添加到这里 -->
+                            <div class="text-center text-muted py-3" id="emptyHistoryMsg">
+                                <i data-lucide="info" class="mb-2"></i>
+                                <p>暂无查询历史</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="bg-light py-3 border-top">
+        <div class="container text-center">
+            <p class="mb-0 text-muted">NLP-SecLogAI © 2023 | 安全日志智能分析平台</p>
+        </div>
+    </footer>
+
+    <!-- Bootstrap JS Bundle CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Prism.js 代码高亮 -->
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-sql.min.js"></script>
+    
+    <!-- 页面脚本 -->
+    <script>
+        // ================ 自然语言转SQL模块 ================
+        
+        // ========== 全局变量 ==========
+        const MAX_HISTORY_ITEMS = 10;  // 最大历史记录数
+        let queryHistory = []; // 查询历史记录
+        
+        // ========== 页面初始化 ==========
+        document.addEventListener('DOMContentLoaded', function() {
+            // 初始化Lucide图标
+            lucide.createIcons();
+            
+            // 初始化页面
+            initPage();
+        });
+        
+        function initPage() {
+            // 注册事件监听器
+            document.getElementById('executeBtn').addEventListener('click', executeQuery);
+            document.getElementById('clearBtn').addEventListener('click', clearQuery);
+            document.getElementById('copySqlBtn').addEventListener('click', copySqlToClipboard);
+            document.getElementById('themeToggle').addEventListener('click', toggleTheme);
+            document.getElementById('clearHistoryBtn').addEventListener('click', clearHistory);
+            
+            // 注册示例查询点击事件
+            document.querySelectorAll('.example-query').forEach(example => {
+                example.addEventListener('click', function() {
+                    const query = this.getAttribute('data-query');
+                    document.getElementById('queryInput').value = query;
+                });
+            });
+            
+            // 加载历史记录
+            loadHistory();
+        }
+        
+        // ========== 主题切换 ==========
+        function toggleTheme() {
+            const htmlElement = document.documentElement;
+            const isDark = htmlElement.getAttribute('data-bs-theme') === 'dark';
+            const newTheme = isDark ? 'light' : 'dark';
+            
+            htmlElement.setAttribute('data-bs-theme', newTheme);
+            
+            // 更新图标
+            document.querySelector('.theme-icon-light').classList.toggle('d-none');
+            document.querySelector('.theme-icon-dark').classList.toggle('d-none');
+        }
+        
+        // ========== 查询执行 ==========
+        async function executeQuery() {
+            const queryInput = document.getElementById('queryInput');
+            if (!queryInput) {
+                console.error('未找到queryInput元素');
+                return;
+            }
+            
+            const queryText = queryInput.value.trim();
+            
+            if (!queryText) {
+                showAlert('请输入查询内容', 'warning');
+                return;
+            }
+            
+            // 显示加载指示器
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            const resultPanel = document.getElementById('resultPanel');
+            
+            if (loadingIndicator) {
+                loadingIndicator.style.display = 'block';
+            }
+            
+            if (resultPanel) {
+                resultPanel.style.display = 'none';
+            }
+            
+            try {
+                const response = await fetch('/nlp/query', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        query: queryText
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // 添加到历史记录
+                    addToHistory({
+                        query: queryText,
+                        sql: data.sql,
+                        results: data.results,
+                        timestamp: new Date().toISOString(),
+                        hasError: false
+                    });
+                    
+                    // 显示结果
+                    updateResultUI(data, false);
+                } else {
+                    // 错误情况下，仍然显示SQL（如果有），但标记为有错误
+                    addToHistory({
+                        query: queryText,
+                        sql: data.sql || '/* SQL生成失败 */',
+                        results: [],
+                        timestamp: new Date().toISOString(),
+                        hasError: true
+                    });
+                    
+                    updateResultUI({
+                        sql: data.sql || '/* SQL生成失败 */',
+                        results: []
+                    }, true);
+                    
+                    showAlert('查询失败：' + (data.error || '未知错误'), 'danger');
+                }
+            } catch (error) {
+                console.error('查询错误:', error);
+                
+                // 连接错误时，显示错误但不显示结果
+                updateResultUI({
+                    sql: '/* 无法连接到服务器 */',
+                    results: []
+                }, true);
+                
+                showAlert('无法连接到API服务', 'danger');
+            } finally {
+                if (loadingIndicator) {
+                    loadingIndicator.style.display = 'none';
+                }
+            }
+        }
+        
+        // 清空查询
+        function clearQuery() {
+            document.getElementById('queryInput').value = '';
+            document.getElementById('resultPanel').style.display = 'none';
+        }
+        
+        // 复制SQL到剪贴板
+        function copySqlToClipboard() {
+            const sqlCode = document.getElementById('sqlCode').textContent;
+            
+            navigator.clipboard.writeText(sqlCode)
+                .then(() => {
+                    const copyBtn = document.getElementById('copySqlBtn');
+                    const originalInnerHTML = copyBtn.innerHTML;
+                    
+                    copyBtn.innerHTML = '<i data-lucide="check" class="me-1"></i> 已复制';
+                    lucide.createIcons({
+                        icons: {
+                            'check': true
+                        }
+                    });
+                    
+                    setTimeout(() => {
+                        copyBtn.innerHTML = originalInnerHTML;
+                        lucide.createIcons({
+                            icons: {
+                                'copy': true
+                            }
+                        });
+                    }, 1500);
+                })
+                .catch(err => {
+                    console.error('复制失败:', err);
+                    showAlert('复制失败', 'danger');
+                });
+        }
+        
+        // 更新结果UI
+        function updateResultUI(data, hasError = false) {
+            // 获取DOM元素
+            const sqlCodeElement = document.getElementById('sqlCode');
+            const resultPanel = document.getElementById('resultPanel');
+            const resultTableHead = document.getElementById('resultTableHead');
+            const resultTableBody = document.getElementById('resultTableBody');
+            
+            // 检查关键元素是否存在
+            if (!sqlCodeElement || !resultPanel) {
+                console.error('结果面板元素不存在');
+                return;
+            }
+            
+            // 显示SQL代码
+            sqlCodeElement.textContent = data.sql;
+            
+            // 应用代码高亮
+            try {
+            Prism.highlightElement(sqlCodeElement);
+            } catch (e) {
+                console.error('代码高亮失败:', e);
+            }
+            
+            // 确保表格元素存在
+            if (resultTableHead && resultTableBody) {
+            // 清空之前的内容
+            resultTableHead.innerHTML = '';
+            resultTableBody.innerHTML = '';
+            
+            // 如果有错误或没有结果，显示"无数据"
+            if (hasError || !data.results || data.results.length === 0) {
+                resultTableBody.innerHTML = `
+                    <tr>
+                        <td colspan="100%" class="text-center py-3">
+                            <i data-lucide="alert-circle" class="mb-2"></i>
+                            <p class="mb-0">无查询结果</p>
+                        </td>
+                    </tr>
+                `;
+                    try {
+                lucide.createIcons({
+                    icons: {
+                        'alert-circle': true
+                    }
+                });
+                    } catch (e) {
+                        console.error('图标初始化失败:', e);
+                    }
+            } else {
+                // 创建表头
+                const headerRow = document.createElement('tr');
+                const firstResult = data.results[0];
+                
+                Object.keys(firstResult).forEach(key => {
+                    const th = document.createElement('th');
+                    th.textContent = key;
+                    headerRow.appendChild(th);
+                });
+                
+                resultTableHead.appendChild(headerRow);
+                
+                // 创建表格内容
+                data.results.forEach(result => {
+                    const row = document.createElement('tr');
+                    
+                    Object.values(result).forEach(value => {
+                        const td = document.createElement('td');
+                        td.textContent = value !== null ? value : 'NULL';
+                        row.appendChild(td);
+                    });
+                    
+                    resultTableBody.appendChild(row);
+                });
+                }
+            } else {
+                console.error('表格元素不存在');
+            }
+            
+            // 显示结果面板
+            resultPanel.style.display = 'block';
+            resultPanel.style.opacity = '0';
+            
+            // 淡入效果
+            setTimeout(() => {
+                resultPanel.style.opacity = '1';
+            }, 10);
+        }
+        
+        // ========== 历史记录管理 ==========
+        function addToHistory(historyItem) {
+            // 检查是否已存在相同查询
+            const existingIndex = queryHistory.findIndex(item => item.query === historyItem.query);
+            
+            if (existingIndex !== -1) {
+                // 移除旧的，添加新的到顶部
+                queryHistory.splice(existingIndex, 1);
+            }
+            
+            // 添加到历史记录顶部
+            queryHistory.unshift(historyItem);
+            
+            // 保持历史记录不超过最大数量
+            if (queryHistory.length > MAX_HISTORY_ITEMS) {
+                queryHistory.pop();
+            }
+            
+            // 保存到本地存储
+            saveHistory();
+            
+            // 更新UI
+            updateHistoryUI();
+        }
+        
+        function loadHistory() {
+            try {
+            const savedHistory = localStorage.getItem('nlp_query_history');
+            
+            if (savedHistory) {
+                try {
+                        const parsedHistory = JSON.parse(savedHistory);
+                        
+                        // 验证历史记录数据结构
+                        if (Array.isArray(parsedHistory)) {
+                            // 过滤掉格式不正确的记录
+                            queryHistory = parsedHistory.filter(item => {
+                                // 检查每个记录是否有必要的属性
+                                return item && 
+                                       typeof item === 'object' && 
+                                       'query' in item && 
+                                       'timestamp' in item;
+                            });
+                            
+                            console.log(`已加载 ${queryHistory.length} 条历史记录`);
+                            
+                            // 确保旧数据兼容新结构
+                            queryHistory = queryHistory.map(item => {
+                                // 确保所有记录都有hasError属性
+                                if (typeof item.hasError === 'undefined') {
+                                    item.hasError = false;
+                                }
+                                // 确保所有记录都有sql属性
+                                if (typeof item.sql === 'undefined') {
+                                    item.sql = '/* 未记录 */';
+                                }
+                                // 确保所有记录都有results属性
+                                if (typeof item.results === 'undefined') {
+                                    item.results = [];
+                                }
+                                return item;
+                            });
+                            
+                    updateHistoryUI();
+                        } else {
+                            console.error('历史记录格式不正确');
+                            queryHistory = [];
+                        }
+                } catch (error) {
+                        console.error('解析历史记录失败:', error);
+                    queryHistory = [];
+                        
+                        // 清除无效的历史记录
+                        try {
+                            localStorage.removeItem('nlp_query_history');
+                        } catch (e) {
+                            console.error('清除历史记录失败:', e);
+                        }
+                    }
+                } else {
+                    console.log('无历史记录');
+                    queryHistory = [];
+                }
+            } catch (error) {
+                console.error('访问localStorage失败:', error);
+                queryHistory = [];
+            }
+        }
+        
+        function saveHistory() {
+            try {
+                localStorage.setItem('nlp_query_history', JSON.stringify(queryHistory));
+            } catch (error) {
+                console.error('保存历史记录失败:', error);
+                showAlert('无法保存历史记录', 'warning');
+            }
+        }
+        
+        function clearHistory() {
+            if (confirm('确定要清空所有查询历史吗？')) {
+                queryHistory = [];
+                saveHistory();
+                updateHistoryUI();
+                showAlert('历史记录已清空', 'info');
+            }
+        }
+        
+        function updateHistoryUI() {
+            const historyList = document.getElementById('historyList');
+            
+            // 如果historyList不存在，则不做任何操作
+            if (!historyList) {
+                console.error('未找到historyList元素');
+                return;
+            }
+            
+            const emptyHistoryMsg = document.getElementById('emptyHistoryMsg');
+            
+            // 清空当前历史列表
+            historyList.innerHTML = '';
+            
+            if (queryHistory.length === 0) {
+                // 显示空历史消息
+                if (emptyHistoryMsg) {
+                    historyList.appendChild(emptyHistoryMsg);
+                } else {
+                    // 如果元素不存在，创建一个新的空历史消息
+                    const newEmptyMsg = document.createElement('div');
+                    newEmptyMsg.id = 'emptyHistoryMsg';
+                    newEmptyMsg.className = 'text-center text-muted py-3';
+                    newEmptyMsg.innerHTML = `
+                        <i data-lucide="info" class="mb-2"></i>
+                        <p>暂无查询历史</p>
+                    `;
+                    historyList.appendChild(newEmptyMsg);
+                    
+                    // 初始化图标
+                    lucide.createIcons({
+                        icons: {
+                            'info': true
+                        }
+                    });
+                }
+                return;
+            }
+            
+            // 隐藏空历史消息
+            if (emptyHistoryMsg) {
+                emptyHistoryMsg.style.display = 'none';
+            }
+            
+            // 添加历史记录项
+            queryHistory.forEach((item, index) => {
+                const historyItem = document.createElement('div');
+                historyItem.className = 'list-group-item list-group-item-action history-item';
+                
+                // 格式化时间
+                const timestamp = new Date(item.timestamp);
+                const formattedTime = timestamp.toLocaleString();
+                
+                // 结果计数
+                const resultCount = item.results ? item.results.length : 0;
+                
+                // 如果有错误，添加错误标记
+                const statusIcon = item.hasError 
+                    ? '<i data-lucide="alert-triangle" class="text-warning ms-2"></i>' 
+                    : '';
+                
+                historyItem.innerHTML = `
+                    <div class="d-flex w-100 justify-content-between align-items-center">
+                        <h6 class="mb-1">${item.query} ${statusIcon}</h6>
+                        <small class="text-muted">${formattedTime}</small>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mt-2">
+                        <small class="text-muted">查询结果: ${item.hasError ? '无数据' : resultCount + ' 条'}</small>
+                        <div>
+                            <button class="btn btn-sm btn-outline-primary rerun-btn" data-index="${index}">
+                                <i data-lucide="refresh-cw" class="me-1"></i>
+                                重新运行
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger remove-btn ms-2" data-index="${index}">
+                                <i data-lucide="x" class="me-1"></i>
+                                删除
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                historyList.appendChild(historyItem);
+                
+                // 添加事件监听器
+                historyItem.querySelector('.rerun-btn').addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const index = parseInt(this.getAttribute('data-index'));
+                    rerunQuery(index);
+                });
+                
+                historyItem.querySelector('.remove-btn').addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const index = parseInt(this.getAttribute('data-index'));
+                    removeHistoryItem(index);
+                });
+            });
+            
+            // 初始化图标
+            lucide.createIcons({
+                icons: {
+                    'refresh-cw': true,
+                    'x': true,
+                    'alert-triangle': true
+                }
+            });
+        }
+        
+        function rerunQuery(index) {
+            if (index >= 0 && index < queryHistory.length) {
+                const item = queryHistory[index];
+                document.getElementById('queryInput').value = item.query;
+                executeQuery();
+                
+                // 滚动到查询区域
+                document.getElementById('querySection').scrollIntoView({
+                    behavior: 'smooth'
+                });
+            }
+        }
+        
+        function removeHistoryItem(index) {
+            if (index >= 0 && index < queryHistory.length) {
+                queryHistory.splice(index, 1);
+                saveHistory();
+                updateHistoryUI();
+            }
+        }
+        
+        // ========== 工具函数 ==========
+        function showAlert(message, type = 'info') {
+            // 创建提示元素
+            const alertEl = document.createElement('div');
+            alertEl.className = `alert alert-${type} alert-dismissible fade show`;
+            alertEl.setAttribute('role', 'alert');
+            
+            // 添加图标
+            let icon = 'info';
+            switch (type) {
+                case 'success': icon = 'check-circle'; break;
+                case 'danger': icon = 'alert-circle'; break;
+                case 'warning': icon = 'alert-triangle'; break;
+            }
+            
+            alertEl.innerHTML = `
+                <i data-lucide="${icon}" class="me-2"></i>
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="关闭"></button>
+            `;
+            
+            // 插入到页面
+            const container = document.querySelector('.container');
+            container.insertBefore(alertEl, container.firstChild);
+            
+            // 初始化图标
+            lucide.createIcons({
+                icons: {
+                    'check-circle': true,
+                    'alert-circle': true,
+                    'alert-triangle': true,
+                    'info': true
+                }
+            });
+            
+            // 自动关闭
+            setTimeout(() => {
+                try {
+                    const bsAlert = new bootstrap.Alert(alertEl);
+                    bsAlert.close();
+                } catch (e) {
+                    alertEl.remove();
+                }
+            }, 5000);
+        }
+    </script>
+</body>
+</html>

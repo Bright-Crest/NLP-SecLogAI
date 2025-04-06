@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, current_app, render_template
 import os
 import logging
 import sys
@@ -11,6 +11,15 @@ MODEL_DIR = os.path.join(ROOT_DIR, 'ai_detect', 'checkpoint')
 
 # 创建蓝图
 ai_bp = Blueprint('ai', __name__, url_prefix='/ai')
+
+# 设置跨域资源共享(CORS)
+@ai_bp.after_request
+def add_cors_headers(response):
+    """为所有响应添加CORS头信息"""
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+    return response
 
 # 设置日志
 logging.basicConfig(level=logging.INFO)
@@ -357,7 +366,7 @@ def model_status():
         return jsonify({"error": str(e)}), 500
 
 
-@ai_bp.route('/model/threshold', methods=['POST'])
+@ai_bp.route('/model/threshold', methods=['POST', 'OPTIONS'])
 def set_threshold():
     """
     设置异常阈值
@@ -373,18 +382,54 @@ def set_threshold():
         "threshold": 0.5
     }
     """
-    try:
-        # 获取请求数据
-        data = request.get_json()
+    # 处理OPTIONS请求（用于CORS预检）
+    if request.method == 'OPTIONS':
+        response = jsonify({'status': 'ok'})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+        response.headers.add('Access-Control-Allow-Methods', 'POST')
+        return response
         
-        if not data or 'threshold' not in data:
+    try:
+        # 记录原始请求数据，用于调试
+        logger.info(f"收到阈值设置请求 - Headers: {dict(request.headers)}")
+        raw_data = request.get_data(as_text=True)
+        logger.info(f"阈值设置请求内容: {raw_data}")
+        
+        # 从不同可能的源获取数据
+        if request.is_json:
+            data = request.get_json()
+            logger.info(f"解析的JSON数据: {data}")
+        elif request.form:
+            data = request.form.to_dict()
+            logger.info(f"表单数据: {data}")
+        else:
+            # 尝试手动解析JSON
+            try:
+                import json
+                data = json.loads(raw_data)
+                logger.info(f"手动解析的JSON: {data}")
+            except Exception as parse_err:
+                logger.error(f"解析请求数据失败: {str(parse_err)}")
+                data = {}
+        
+        # 验证数据
+        if not data:
+            return jsonify({"error": "请求体为空"}), 400
+            
+        if 'threshold' not in data:
             return jsonify({"error": "请求体必须包含'threshold'字段"}), 400
         
-        threshold = float(data['threshold'])
+        # 处理不同类型的阈值输入
+        try:
+            threshold = float(data['threshold'])
+        except (ValueError, TypeError) as ve:
+            logger.error(f"阈值转换错误: {str(ve)}, 原始值: {data['threshold']}")
+            return jsonify({"error": f"阈值必须是有效的数字，而不是 {data['threshold']}"}), 400
         
-        # 验证阈值
+        # 验证阈值范围
         if threshold < 0 or threshold > 1:
-            return jsonify({"error": "threshold必须在0到1之间"}), 400
+            return jsonify({"error": f"threshold必须在0到1之间，当前值: {threshold}"}), 400
         
         # 获取异常服务
         anomaly_service = get_anomaly_service()
@@ -392,18 +437,34 @@ def set_threshold():
         if anomaly_service is None:
             return jsonify({"error": "异常检测服务未初始化"}), 500
         
+        # 记录原始阈值，用于验证更改是否成功
+        original_threshold = anomaly_service.threshold
+        logger.info(f"当前阈值: {original_threshold}, 将设置为: {threshold}")
+        
         # 设置阈值
         anomaly_service.set_threshold(threshold)
         
-        # 返回结果
-        return jsonify({
+        # 验证阈值是否真正更改
+        new_threshold = anomaly_service.threshold
+        logger.info(f"阈值设置后的值: {new_threshold}")
+        
+        if abs(new_threshold - threshold) > 1e-6:  # 浮点数比较
+            logger.warning(f"阈值设置可能未生效，期望值: {threshold}, 实际值: {new_threshold}")
+        
+        # 构建响应
+        response = jsonify({
             "success": True,
-            "threshold": float(threshold)
+            "threshold": float(new_threshold),
+            "previous_threshold": float(original_threshold)
         })
         
+        # 添加CORS头
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
+        
     except Exception as e:
-        logger.error(f"设置阈值时发生错误: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"设置阈值时发生错误: {str(e)}", exc_info=True)
+        return jsonify({"error": str(e), "details": str(e.__class__.__name__)}), 500
 
 
 @ai_bp.route('/knn/build', methods=['POST'])
@@ -522,4 +583,91 @@ def knn_status():
             
     except Exception as e:
         logger.error(f"处理KNN状态请求时发生错误: {str(e)}")
-        return jsonify({"error": str(e)}), 500 
+        return jsonify({"error": str(e)}), 500
+
+
+# 添加Web界面路由
+@ai_bp.route('/ui', methods=['GET'])
+def ai_detector_ui():
+    """
+    AI异常检测Web界面
+    
+    提供基于Bootstrap的前端界面，用于直观地进行日志异常检测
+    """
+    return render_template('ai_detector.html')
+
+@ai_bp.route('/debug/threshold', methods=['GET', 'POST'])
+def debug_threshold():
+    """
+    调试专用接口：直接设置/获取阈值，方便前端调试
+    
+    GET: 返回当前阈值
+    POST: 接收表单或JSON格式设置阈值
+    
+    注意：仅用于测试环境
+    """
+    anomaly_service = get_anomaly_service()
+    
+    if anomaly_service is None:
+        return jsonify({"error": "异常检测服务未初始化"}), 500
+        
+    # GET请求：返回当前阈值
+    if request.method == 'GET':
+        return jsonify({
+            "current_threshold": float(anomaly_service.threshold),
+            "service_initialized": True
+        })
+    
+    # POST请求：设置新阈值
+    try:
+        # 尝试从不同来源获取阈值
+        threshold = None
+        
+        # 从JSON获取
+        if request.is_json:
+            data = request.get_json()
+            threshold = data.get('threshold')
+            
+        # 从Form表单获取    
+        elif request.form:
+            threshold = request.form.get('threshold')
+            
+        # 从URL参数获取
+        else:
+            threshold = request.args.get('threshold')
+            
+        if threshold is None:
+            return jsonify({"error": "无法获取阈值参数，请通过JSON、表单或URL参数提供"}), 400
+            
+        # 转换为浮点数
+        try:
+            threshold = float(threshold)
+        except (ValueError, TypeError):
+            return jsonify({"error": f"无效的阈值格式: {threshold}，必须是有效数字"}), 400
+            
+        # 记录设置前的阈值
+        old_threshold = anomaly_service.threshold
+        
+        # 设置新阈值
+        success = anomaly_service.set_threshold(threshold)
+        
+        if success:
+            return jsonify({
+                "success": True,
+                "old_threshold": float(old_threshold),
+                "new_threshold": float(anomaly_service.threshold),
+                "message": f"阈值已从 {old_threshold} 更新为 {anomaly_service.threshold}"
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "threshold": float(old_threshold),
+                "message": "阈值设置失败，可能是因为值无效"
+            }), 400
+            
+    except Exception as e:
+        logger.error(f"调试阈值接口错误: {str(e)}", exc_info=True)
+        return jsonify({
+            "error": str(e),
+            "type": str(e.__class__.__name__)
+        }), 500 

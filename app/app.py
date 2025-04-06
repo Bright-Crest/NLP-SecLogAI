@@ -1,4 +1,4 @@
-from flask import Flask,render_template
+from flask import Flask, render_template
 #from flask_migrate import Migrate
 from app.models.db import  init_db
 import logging
@@ -32,23 +32,29 @@ def initialize_database():
 
 # ---------- 3. 注册蓝图（按模块划分） ----------
 
+from app.routes.main_routes import main_bp
 from app.routes.log_routes import log_bp  # 成员B的日志管理API
 from app.routes.nlp_routes import nlp_bp  # 成员D的NLP处理API
 from app.routes.anomaly_routes import anomaly_bp  # 成员C的异常检测API
+from app.routes.ai_routes import ai_bp, init_ai_bp  # 成员E的AI检测API
 
+app.register_blueprint(main_bp, url_prefix='/')
 app.register_blueprint(log_bp, url_prefix='/logs')
 app.register_blueprint(nlp_bp, url_prefix='/nlp')
 app.register_blueprint(anomaly_bp, url_prefix='/anomalies')
+app.register_blueprint(ai_bp, url_prefix='/ai')
+
+init_ai_bp(app)
 
 # ---------- 4. 错误处理 ----------
+# 注册错误处理
 @app.errorhandler(404)
-def not_found(error):
-    return {'error': 'API endpoint not found'}, 404
+def page_not_found(e):
+    return render_template('errors/404.html'), 404
 
 @app.errorhandler(500)
-def internal_error(error):
-    app.logger.error(f"Server Error: {error}")
-    return {'error': 'Internal server error'}, 500
+def internal_server_error(e):
+    return render_template('errors/500.html'), 500
 
 # ---------- 5. 日志记录配置 ----------
 logging.basicConfig(

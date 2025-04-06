@@ -102,7 +102,8 @@ class NL2SQLConverter:
         
         try:
             # 检查API密钥是否可用
-            if not os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENROUTER_API_KEY").strip() == "":
+            api_key = OPENROUTER_API_KEY
+            if not api_key or api_key.strip() == "":
                 # 如果没有API密钥，直接使用模式匹配生成简单SQL
                 result = self._pattern_matching_fallback(processed_query, time_range)
                 

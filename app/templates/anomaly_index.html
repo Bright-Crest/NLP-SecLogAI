@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NLP-SecLogAI 安全日志分析系统</title>
+    
+    <!-- CSS依赖 -->
+    <link href="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/5.1.3/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.bootcdn.net/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #2c3e50;
+            --secondary-color: #3498db;
+        }
+        .navbar-brand i {
+            color: var(--secondary-color);
+            margin-right: 10px;
+        }
+        .log-card {
+            border-left: 4px solid var(--secondary-color);
+            transition: transform 0.2s;
+        }
+        .log-card:hover {
+            transform: translateY(-3px);
+        }
+        .anomaly-critical { background-color: #ffcccc; }
+        .anomaly-warning { background-color: #fff3cd; }
+        .chart-container {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            height: 500px; /* 固定高度 */
+            min-height: 300px; /* 最小高度 */
+            margin-bottom: 20px; /* 统一底部间距 */
+        }
+        /* 确保canvas元素填满容器 */
+        .chart-container canvas {
+            width: 90% !important;
+            height: 90% !important;
+        }
+    </style>
+</head>
+<body>
+    <!-- 导航栏
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">
+                <i class="fas fa-shield-alt"></i>NLP-SecLogAI
+            </a>
+        </div>
+    </nav> -->
+
+    <!-- 主内容区 -->
+    <div class="container-fluid mt-4">
+        <div class="row">
+            <!-- 侧边栏 -->
+            <div class="col-md-3">
+                <div class="card shadow">
+                    <div class="card-header bg-primary text-white">
+                        <i class="fas fa-cogs"></i> 操作面板
+                    </div>
+                    <div class="card-body">
+                        <!-- 日志类型选择 -->
+                        <div class="mb-3">
+                            <label class="form-label">日志类型</label>
+                            <select class="form-select" id="logType">
+                                <option value="ssh">SSH 日志</option>
+                                <option value="web">Web 日志</option>
+                                <option value="firewall">防火墙日志</option>
+                                <option value="mysql">MySQL 日志</option>
+                                <option value="hdfs">HDFS 日志</option>
+                            </select>
+                        </div>
+
+                        <!-- 日志上传 -->
+                        <div class="mb-3">
+                            <label class="form-label">上传日志</label>
+                            <div class="input-group">
+                                <input type="file" class="form-control" id="logFile">
+                                <button class="btn btn-primary" id="uploadBtn">
+                                    <i class="fas fa-upload"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 自然语言查询 -->
+                        <div class="mb-3">
+                            <label class="form-label">自然语言查询</label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" 
+                                       placeholder="输入查询语句，如：过去24小时admin登录失败次数">
+                                <button class="btn btn-success" id="queryBtn">
+                                    <i class="fas fa-search"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 主展示区 -->
+            <div class="col-md-9">
+                <!-- 统计图表 -->
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <div class="chart-container">
+                            <h5><i class="fas fa-chart-pie"></i> 攻击类型分布</h5>
+                            <canvas id="attackTypeChart" height="400"></canvas>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="chart-container">
+                            <h5><i class="fas fa-chart-line"></i> 时间趋势分析</h5>
+                            <canvas id="timeTrendChart" height="400"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 异常检测结果 -->
+                <div class="card shadow">
+                    <div class="card-header bg-warning">
+                        <i class="fas fa-exclamation-triangle"></i> 异常检测结果
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-hover">
+                            <thead >
+                                <tr id="anomalyHeaders">
+                                    <!-- <th>a</th>
+                                    <th>b</th>
+                                    <th>c</th>
+                                    <th>d</th> -->
+                                </tr>
+                            </thead>
+                            <tbody id="anomalyResults">
+                                <!-- 动态加载数据 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JS依赖 -->
+    <script src="https://cdn.bootcdn.net/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.1.3/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/Chart.js/3.7.0/chart.min.js"></script>
+    
+    <script>
+        // // 图表初始化
+        // const initCharts = () => {
+        //     // 攻击类型分布图
+        //     attackChart = new Chart(document.getElementById('attackTypeChart'), {
+        //         type: 'doughnut',
+        //         data: { labels: [], datasets: [{ data: [] }] }
+        //     });
+
+        //     // 时间趋势图
+        //     timeChart = new Chart(document.getElementById('timeTrendChart'), {
+        //         type: 'line',
+        //         data: { labels: [], datasets: [{ data: [] }] }
+        //     });
+        // };
+        // 初始化图表
+        const initCharts = () => {
+            const commonOptions = {
+                responsive: true,
+                maintainAspectRatio: false, // 不保持宽高比
+            };
+            // 攻击类型分布图（圆饼图）
+            attackChart = new Chart(document.getElementById('attackTypeChart'), {
+                type: 'pie', // 改为纯饼图
+                options: {
+                    ...commonOptions,
+                    plugins: {
+                        legend: { position: 'right' }
+                    }
+                }
+            });
+
+            // 时间趋势图（柱状图）
+            timeChart = new Chart(document.getElementById('timeTrendChart'), {
+                type: 'bar', // 改为柱状图
+                ...commonOptions,
+                options: {
+                    scales: {
+                        y: { beginAtZero: true }
+                    }
+                }
+            });
+        };
+
+
+        // 加载异常检测结果
+        const loadAnomalies = async (logType) => {
+            
+            try {
+                const response = await fetch(`/anomalies/detect/${logType}`);
+                const data = await response.json();
+                
+                $('#anomalyResults').empty();
+                renderTableHeader(logType);
+                if(logType == 'ssh'){
+                    data.ssh_anomalies.forEach(anomaly => {
+                        const row = `
+                            <tr>
+                                <td>${anomaly.type}</td>
+                                <td>${anomaly.source_ip || 'N/A'}</td>
+                                <td>${anomaly.reason}</td>
+                                <td>${anomaly.user || 'Null'}</td>
+                                <td>${anomaly.countries|| 'Null'}</td>
+                            </tr>
+                        `;
+                        $('#anomalyResults').append(row);
+                    });
+                }else if(logType =='web'){
+                    data.web_anomalies.forEach(anomaly => {
+                        const row = `
+                            <tr>
+                                <td>${anomaly.type}</td>
+                                <td>${anomaly.source_ip || 'N/A'}</td>
+                                <td>${anomaly.reason}</td>
+                            </tr>
+                        `;
+                        $('#anomalyResults').append(row);
+                    });
+                }else if(logType =='firewall'){
+                    data.firewall_anomalies.forEach(anomaly => {
+                        const row = `
+                            <tr>
+                                <td>${anomaly.type}</td>
+                                <td>${anomaly.source_ip || 'N/A'}</td>
+                                <td>${anomaly.reason}</td>
+                            </tr>
+                        `;
+                        $('#anomalyResults').append(row);
+                    });
+                }else if(logType =='mysql'){
+                    data.mysql_anomalies.forEach(anomaly => {
+                        const row = `
+                            <tr>
+                                <td>${anomaly.type}</td>
+                                <td>${anomaly.source_ip || 'N/A'}</td>
+                                <td>${anomaly.user}</td>
+                                <td>${anomaly.reason}</td>
+                            </tr>
+                        `;
+                        $('#anomalyResults').append(row);
+                    });
+                }else if(logType =='hdfs'){
+                    data.hdfs_anomalies.forEach(anomaly => {
+                        const row = `
+                            <tr>
+                                <td>${anomaly.type}</td>
+                                <td>${anomaly.pid}</td>
+                                <td>${anomaly.reason}</td>
+                            </tr>
+                        `;
+                        $('#anomalyResults').append(row);
+                    });
+                }
+                await updateCharts(logType,data);
+            } catch (error) {
+                showErrorAlert('加载检测结果列表失败');
+            }
+        };
+
+        // 初始化
+        $(document).ready(() => {
+            initCharts();
+            $('#logType').change(() => loadAnomalies($('#logType').val()));
+            loadAnomalies('ssh');
+        });
+
+        // 文件上传处理
+        $('#uploadBtn').click(async () => {
+            const file = $('#logFile')[0].files[0];
+            const logType = $('#logType').val();
+            
+            if (!file) {
+                alert('请选择要上传的文件');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('log_type', logType);
+
+            try {
+                // 上传日志
+                const uploadRes = await fetch('/logs/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!uploadRes.ok) throw new Error(await uploadRes.text());
+
+                // 触发自动检测
+                //const detectRes = await fetch(`/anomalies/detect/${logType}`);
+                //if (!detectRes.ok) throw new Error('检测失败');
+                
+                // 刷新统计和结果
+                loadAnomalies(logType);
+                
+            } catch (error) {
+                showErrorAlert(error.message);
+            }
+        });
+
+        // 错误提示弹窗
+        const showErrorAlert = (msg) => {
+            const alertHtml = `
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    ${msg}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            `;
+            $('.container-fluid').prepend(alertHtml);
+        };
+        // 图表实例全局引用
+        let attackChart, timeChart;
+
+        // 更新图表数据
+        const updateCharts = async (logType,data) => {
+            // // 获取统计接口数据
+            // const statsRes = await fetch(`/anomalies/stats?type=${logType}`);
+            // const statsData = await statsRes.json();
+
+            // // 更新攻击类型分布
+            // attackChart.data.labels = statsData.attack_types.map(d => d.type);
+            // attackChart.data.datasets[0].data = statsData.attack_types.map(d => d.count);
+            // attackChart.update();
+
+            // // 更新时间趋势分析
+            // timeChart.data.labels = statsData.time_series.map(d => d.hour);
+            // timeChart.data.datasets[0].data = statsData.time_series.map(d => d.count);
+            // timeChart.update();
+            // ---
+            // const statsRes = await fetch(`/anomalies/stats?type=${logType}`);
+            // const statsData = await statsRes.json();
+
+            // // 更新攻击类型分布（直接使用后端返回的type字段）
+            // attackChart.data = {
+            //     labels: statsData.attack_types.map(d => d.type),
+            //     datasets: [{
+            //         data: statsData.attack_types.map(d => d.count),
+            //         backgroundColor: ['#ff6384', '#36a2eb', '#ffce56', '#4bc0c0']
+            //     }]
+            // };
+
+            // // 更新时间趋势（按小时聚合）
+            // timeChart.data = {
+            //     labels: statsData.time_series.map(d => `${d.hour}:00`),
+            //     datasets: [{
+            //         label: '异常事件数量',
+            //         data: statsData.time_series.map(d => d.count),
+            //         backgroundColor: '#36a2eb'
+            //     }]
+            // };
+
+        
+        // 统计攻击类型分布（使用第一列数据）
+        const typeCounts = {};
+        const anomalies = data[`${logType}_anomalies`] || [];
+        
+        anomalies.forEach(anomaly => {
+            const type = anomaly.type;
+            typeCounts[type] = (typeCounts[type] || 0) + 1;
+        });
+        
+        // 获取时间趋势数据（从原始日志表）
+        const timeRes = await fetch(`/logs/stats?type=${logType}`);
+        const timeData = await timeRes.json();
+        
+        // 更新饼图（攻击类型分布）
+        attackChart.data = {
+            labels: Object.keys(typeCounts),
+            datasets: [{
+                data: Object.values(typeCounts),
+                backgroundColor: ['#ff6384', '#36a2eb', '#ffce56', '#4bc0c0','#9a3d8f','#e74c5c','#2fcca2','#b81d6a','#4d7fe6','#ff9f40']
+            }]
+        };
+        
+        // 5. 更新柱状图（时间趋势）
+        timeChart.data = {
+            labels: timeData.map(item => `${item.hour}:00`),
+            datasets: [{
+                label: '日志数量',
+                data: timeData.map(item => item.count),
+                backgroundColor: '#36a2eb'
+            }]
+        };
+
+            attackChart.update();
+            timeChart.update();
+        };
+
+        // 动态生成表头
+        const renderTableHeader = (logType) => {
+            const columnMap = {
+                'ssh': ['攻击类型', '来源IP', '详情','涉及用户','登录国家'],
+                'web': ['异常类型', '攻击IP', '详情'],
+                'firewall': ['异常类型', '攻击IP', '详情'],
+                'mysql': ['攻击类型', '来源IP','涉及用户', '详情'],
+                'hdfs': ['异常类型', '关联进程ID', '详情']
+            };
+            
+            const headers = columnMap[logType] || ['类型', '相关目标', '详情1', '详情2', '详情3'];
+            
+            // 清空并更新表头
+            const $tr = $('#anomalyHeaders');
+            $tr.empty();
+            headers.forEach(header => {
+                $tr.append($('<th>').text(header));
+            });
+        };
+
+    </script>
+</body>
+</html>

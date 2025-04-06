@@ -1,8 +1,14 @@
-from flask import Blueprint, jsonify,request
+from flask import Blueprint, jsonify, request, render_template
 from app.services.anomaly_detector import SSHRuleDetector,WebLogDetector,FirewallDetector,MySQLDetector,HDFSAnomalyDetector
 from app.models.db import get_db
 
 anomaly_bp = Blueprint("anomalies", __name__)
+
+
+@anomaly_bp.route('/')
+def index():
+    return render_template('anomaly_index.html')
+
 
 @anomaly_bp.route('/stats')
 def get_statistics():

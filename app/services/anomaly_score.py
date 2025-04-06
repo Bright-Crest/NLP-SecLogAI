@@ -279,9 +279,43 @@ class AnomalyScoreService:
         return scores
     
     def set_threshold(self, threshold):
-        """设置异常阈值"""
-        self.threshold = threshold
-        logging.info(f"异常阈值已设置为 {threshold}")
+        """
+        设置异常阈值
+        
+        参数:
+            threshold: 新的异常阈值 (0-1之间的浮点数)
+            
+        返回:
+            bool: 设置是否成功
+        """
+        try:
+            # 确保threshold是浮点数
+            threshold = float(threshold)
+            
+            # 验证阈值范围
+            if threshold < 0.0 or threshold > 1.0:
+                logging.error(f"阈值设置失败：值 {threshold} 不在有效范围 [0, 1] 内")
+                return False
+                
+            # 记录原始阈值
+            old_threshold = self.threshold
+            
+            # 设置服务的阈值
+            self.threshold = threshold
+            
+            # 同时设置底层检测器的阈值(如果存在)
+            if hasattr(self.detector, 'threshold'):
+                self.detector.threshold = threshold
+                
+            logging.info(f"异常阈值已从 {old_threshold} 更新为 {threshold}")
+            return True
+            
+        except (ValueError, TypeError) as e:
+            logging.error(f"阈值设置失败：{str(e)}")
+            return False
+        except Exception as e:
+            logging.error(f"设置阈值时发生意外错误：{str(e)}")
+            return False
     
     def set_use_knn(self, use_knn):
         """设置是否使用KNN增强"""
