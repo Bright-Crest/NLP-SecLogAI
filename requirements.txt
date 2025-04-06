@@ -1,0 +1,10 @@
+flask
+sqlalchemy
+pydantic
+python-dotenv
+openrouter>=1.0.0
+requests
+pytest
+pytest-cov
+pytest-mock
+flask-cors
