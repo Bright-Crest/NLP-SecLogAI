@@ -6,8 +6,10 @@
     <title>NLP-SecLogAI 安全日志分析系统</title>
     
     <!-- CSS依赖 -->
-    <link href="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/5.1.3/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.bootcdn.net/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/5.1.3/css/bootstrap.min.css" rel="stylesheet" 
+          onerror="this.onerror=null;this.href='/static/css/bootstrap/bootstrap.min.css';">
+    <link href="https://cdn.bootcdn.net/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet"
+          onerror="this.onerror=null;this.href='/static/css/fontawesome/all.min.css';">
     <style>
         :root {
             --primary-color: #2c3e50;
@@ -51,6 +53,41 @@
             </a>
         </div>
     </nav> -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand d-flex align-items-center" href="/">
+                <i data-lucide="shield" class="me-2"></i>
+                NLP-SecLogAI
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/">首页</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/anomalies/">规则异常检测</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/ai/ui">AI异常检测</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/nlp/ui">智能查询</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#about">关于我们</a>
+                    </li>
+                </ul>
+                <button id="themeToggle" class="theme-toggle ms-2">
+                    <i data-lucide="moon" class="theme-icon theme-icon-dark d-none"></i>
+                    <i data-lucide="sun" class="theme-icon theme-icon-light"></i>
+                </button>
+            </div>
+        </div>
+    </nav>
+
 
     <!-- 主内容区 -->
     <div class="container-fluid mt-4">
@@ -144,9 +181,9 @@
     </div>
 
     <!-- JS依赖 -->
-    <script src="https://cdn.bootcdn.net/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
-    <script src="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.1.3/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdn.bootcdn.net/ajax/libs/Chart.js/3.7.0/chart.min.js"></script>
+    <script src="/static/js/jquery/jquery.min.js"></script>
+    <script src="/static/js/bootstrap/bootstrap.bundle.min.js"></script>
+    <script src="/static/js/chart/chart.min.js"></script>
     
     <script>
         // // 图表初始化

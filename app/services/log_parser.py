@@ -233,7 +233,7 @@ class HDFSLogParser:
     """
     HDFS日志解析器（支持常见HDFS日志格式）
     示例日志：
-    81109\t203518\t143\tINFO\tdfs.DataNode$DataXceiver\tReceiving block blk_-1608999687919862906 src: /10.250.19.102:54106 dest: /10.250.19.102:50010
+    081109 204925 673 INFO dfs.DataNode$DataXceiver: Receiving block blk_-5623176793330377570 src: /10.251.75.228:53725 dest: /10.251.75.228:50010
     """
     def __init__(self):
         # 定义所有日志类型的正则表达式模式（保持不变）
@@ -253,56 +253,58 @@ class HDFSLogParser:
             'E13': r'Receiving block (\S+) src: (\S+) dest: (\S+)',
             'E14': r'Verification succeeded for (\S+)'
         }
- 
+
     @staticmethod
     def parse(log_line):
-        # 正则表达式模式（日期解析部分修改）
+        # 修改正则表达式以匹配日志格式
         pattern = re.compile(
             r"^"
-            r"(?P<date>\d{5})\t"          # 日期字段保持5位（YMMDD格式）
-            r"(?P<time>\d{6})\t"          # 时间字段保持6位
-            r"(?P<pid>\d+)\t"
-            r"(?P<level>\w+)\t"
-            r"(?P<component>.*?)\t"
+            r"(?P<year>\d{2})(?P<month>\d{2})(?P<day>\d{2})\s"  # 日期部分 (MMDDYY)
+            r"(?P<time>\d{6})\s"                                # 时间部分 (HHMMSS)
+            r"(?P<pid>\d+)\s"
+            r"(?P<level>\w+)\s"
+            r"(?P<component>.*?):\s"
             r"(?P<message>.*)$"
         )
- 
+
         match = pattern.match(log_line)
         if not match:
             return None
         log_data = match.groupdict()
- 
-        # 解析日期（修改部分）
-        date_str = log_data["date"]
-        year = date_str[0]                # 取第1位作为年份（20XX）
-        month = date_str[1:3]             # 取2-3位作为月份
-        day = date_str[3:5]               # 取4-5位作为日期
-        parsed_date = f"200{year}-{month}-{day}"
-        
-        # 解析时间（保持不变）
+
+        # 解析日期
+        month = log_data["month"]
+        day = log_data["day"]
+        year = log_data["year"]
+        parsed_date = f"20{year}-{month}-{day}"  # 假设年份是2000年代
+
+        # 解析时间
         time_str = log_data["time"]
         hour = time_str[:2]
         minute = time_str[2:4]
         second = time_str[4:]
         parsed_time = f"{hour}:{minute}:{second}"
-        
+
         # 拼接时间戳
         timestamp = f"{parsed_date} {parsed_time}"
         log_data["timestamp"] = timestamp
- 
-        # 解析日志内容（保持不变）
+
+        # 解析日志内容
         content_parser = HDFSLogParser._parse_message(log_data["message"])
         return {**log_data, **content_parser}
- 
-    # _parse_message方法保持不变
-    def _parse_message(self, message):
-        for log_type, pattern in self.patterns.items():
+
+    @staticmethod
+    def _parse_message(message):
+        for log_type, pattern in HDFSLogParser().patterns.items():
             match = re.match(pattern, message)
             if match:
                 return {
                     "type": log_type,
+                    "details": match.groups()  # 返回匹配的细节
                 }
         return None
+
+
 
 class LINUXLogParser:
     """
