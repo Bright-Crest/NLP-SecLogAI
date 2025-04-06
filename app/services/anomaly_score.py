@@ -5,8 +5,8 @@ import numpy as np
 import torch
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from app.models.anomaly_detector import AnomalyDetector
-from app.models.log_window import LogWindow
+from app.ai_models.anomaly_detector import AnomalyDetector
+from app.ai_models.log_window import LogWindow
 
 # 从环境变量获取配置
 THRESHOLD = float(os.environ.get("THRESHOLD", 0.5))

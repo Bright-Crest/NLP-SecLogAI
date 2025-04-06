@@ -10,10 +10,10 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
 # 导出测试类
-from tests.app.unit.test_log_tokenizer import TestLogTokenizer
-from tests.app.unit.test_log_window import TestLogWindow
-from tests.app.unit.test_anomaly_score_service import TestAnomalyScoreService
-from tests.app.unit.test_ai_routes import TestAIRoutes
+from tests.app_ai_detect.unit.test_log_tokenizer import TestLogTokenizer
+from tests.app_ai_detect.unit.test_log_window import TestLogWindow
+from tests.app_ai_detect.unit.test_anomaly_score_service import TestAnomalyScoreService
+from tests.app_ai_detect.unit.test_ai_routes import TestAIRoutes
 
 # 记录版本信息
 __version__ = '0.1.0'

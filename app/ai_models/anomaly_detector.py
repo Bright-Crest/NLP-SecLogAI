@@ -17,10 +17,9 @@ MODEL_DIR = os.path.join(ROOT_DIR, "ai_detect", "checkpoint")
 OUTPUT_DIR = os.path.join(ROOT_DIR, "ai_detect", "output")
 
 sys.path.append(ROOT_DIR)
-from app.models.tinylogbert import create_tiny_log_bert
-from app.models.log_window import LogWindow
+from app.ai_models.log_window import LogWindow
 from ai_detect.core.supervised_evaluator import evaluate_scores, visualize_results, find_best_threshold
-from app.models.tinylogbert import AnomalyScoreEnsemble
+from app.ai_models.tinylogbert import AnomalyScoreEnsemble, create_tiny_log_bert
 
 
 # 设置日志

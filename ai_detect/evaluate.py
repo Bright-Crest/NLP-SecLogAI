@@ -10,7 +10,7 @@ MODEL_DIR = os.path.join(ROOT_DIR, "ai_detect", "checkpoint")
 OUTPUT_DIR = os.path.join(ROOT_DIR, "ai_detect", "output")
 
 sys.path.append(ROOT_DIR)
-from app.models.anomaly_detector import AnomalyDetector
+from app.ai_models.anomaly_detector import AnomalyDetector
 
 
 def setup_logging(output_dir):

@@ -6,7 +6,7 @@ import torch
 # 添加项目根目录到Python路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
-from app.models.log_window import LogWindow
+from app.ai_models.log_window import LogWindow
 
 class TestLogWindow(unittest.TestCase):
     """测试LogWindow类的功能"""

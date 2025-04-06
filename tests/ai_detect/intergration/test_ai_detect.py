@@ -14,7 +14,7 @@ sys.path.append(ROOT_DIR)
 from ai_detect.ai_detect_cli import main as detect_main
 from ai_detect.train import main as train_main
 from ai_detect.evaluate import main as evaluate_main
-from app.models.anomaly_detector import AnomalyDetector
+from app.ai_models.anomaly_detector import AnomalyDetector
 
 
 class TestAnomalyDetectionIntegration(unittest.TestCase):
@@ -135,7 +135,7 @@ class TestAnomalyDetectionIntegration(unittest.TestCase):
         }
         
         # 这里我们需要直接模拟evaluate方法从而避免实际加载模型
-        with patch('app.models.anomaly_detector.AnomalyDetector.evaluate', return_value=evaluation_result), \
+        with patch('app.ai_models.anomaly_detector.AnomalyDetector.evaluate', return_value=evaluation_result), \
              patch('sys.argv', [
                 'evaluate.py',
                 '--model_dir', self.model_dir,
@@ -157,7 +157,7 @@ class TestAnomalyDetectionIntegration(unittest.TestCase):
         }
         
         # 对于检测功能，我们需要模拟detect_sequence方法
-        with patch('app.models.anomaly_detector.AnomalyDetector.detect_sequence', return_value=normal_detection_result), \
+        with patch('app.ai_models.anomaly_detector.AnomalyDetector.detect_sequence', return_value=normal_detection_result), \
              patch('sys.argv', [
                 'ai_detect_cli.py',
                 '--log-file', self.normal_log_file,
@@ -184,7 +184,7 @@ class TestAnomalyDetectionIntegration(unittest.TestCase):
         }
         
         # 再次模拟检测函数用于异常日志
-        with patch('app.models.anomaly_detector.AnomalyDetector.detect_sequence', return_value=anomaly_detection_result), \
+        with patch('app.ai_models.anomaly_detector.AnomalyDetector.detect_sequence', return_value=anomaly_detection_result), \
              patch('sys.argv', [
                 'ai_detect_cli.py',
                 '--log-file', self.anomaly_log_file,

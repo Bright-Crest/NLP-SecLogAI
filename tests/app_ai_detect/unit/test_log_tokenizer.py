@@ -6,7 +6,7 @@ import torch
 # 添加项目根目录到Python路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
-from app.models.log_tokenizer import LogTokenizer
+from app.ai_models.log_tokenizer import LogTokenizer
 
 class TestLogTokenizer(unittest.TestCase):
     """测试LogTokenizer类的功能"""
