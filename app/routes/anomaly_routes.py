@@ -4,11 +4,9 @@ from app.models.db import get_db
 
 anomaly_bp = Blueprint("anomalies", __name__)
 
-
 @anomaly_bp.route('/')
 def index():
     return render_template('anomaly_index.html')
-
 
 @anomaly_bp.route('/stats')
 def get_statistics():

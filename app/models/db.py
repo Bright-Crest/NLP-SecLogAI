@@ -167,8 +167,8 @@ def init_db():
     #     reason TEXT,
     #     detected_by TEXT CHECK(detected_by IN ('rules', 'AI', 'both'))
     # )""")
-    cursor.execute("""DROP TABLE IF EXISTS ssh_logs""")
-    cursor.execute("""DROP TABLE IF EXISTS ssh_anomalies""")
+    # cursor.execute("""DROP TABLE IF EXISTS ssh_logs""")
+    # cursor.execute("""DROP TABLE IF EXISTS ssh_anomalies""")
 
 
     # 创建SSH专用日志表
