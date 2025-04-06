@@ -6,7 +6,11 @@ NLP路由模块
 处理自然语言查询请求，将自然语言转换为SQL查询
 """
 
-from flask import Blueprint, request, jsonify
+import os
+import sys
+from flask import Blueprint, request, jsonify, render_template
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from services.nlp_processor import NL2SQLConverter
 from models.db import get_db, TABLE_SCHEMA
 
@@ -35,7 +39,7 @@ def nlp_query():
     if not request.is_json:
         return jsonify({"error": "请求必须为JSON格式"}), 400
     
-    data = request.json
+    data = request.json or {}
     user_query = data.get("query")
     
     if not user_query:
@@ -68,3 +72,23 @@ def nlp_query():
             "sql": sql_query,
             "original_query": user_query
         }), 500 
+
+
+@nlp_bp.route("/ui", methods=["GET"])
+def nlp_ui():
+    """
+    自然语言转SQL的Web界面
+    
+    提供基于Bootstrap的前端界面，用于直观地进行自然语言查询
+    """
+    return render_template("nlp_sql.html")
+
+
+# 添加CORS支持
+@nlp_bp.after_request
+def add_cors_headers(response):
+    """为所有响应添加CORS头信息"""
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+    return response 

@@ -147,8 +147,9 @@ class AnomalyDetector:
         self.window = LogWindow(tokenizer_name=tokenizer_name, window_size=window_size)
         
         # 初始化模型
-        self.model = None
+        self.model = create_tiny_log_bert(model_dir)
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.model.to(self.device)
         
         logging.info(f"异常检测器初始化完成，使用设备: {self.device}，检测方法: {detection_method}")
     
@@ -641,7 +642,7 @@ class AnomalyDetector:
             else:
                 logging.warning(f"拟合 {method} 检测器失败，异常检测可能不准确")
     
-    def evaluate(self, test_file, model_dir=None, threshold=None, eval_methods=None, eval_ensemble=True, no_labels=True, batch_size=128):
+    def evaluate(self, test_file, model_dir=MODEL_DIR, threshold=None, eval_methods=None, eval_ensemble=True, no_labels=True, batch_size=128):
         """
         评估模型性能
         
@@ -1099,7 +1100,7 @@ class AnomalyDetector:
                     }
                 }
 
-    def detect(self, log_text, model_dir=None, threshold=0.5, method=None):
+    def detect(self, log_text, model_dir=MODEL_DIR, threshold=0.5, method=None):
         """
         检测单条日志是否异常
         
@@ -1184,7 +1185,7 @@ class AnomalyDetector:
             "method_weights": method_weights
         }
     
-    def detect_sequence(self, log_list, model_dir=None, window_type='sliding', stride=1, threshold=0.5, method=None, batch_size=128):
+    def detect_sequence(self, log_list, model_dir=MODEL_DIR, window_type='sliding', stride=1, threshold=0.5, method=None, batch_size=128):
         """
         检测日志序列中的异常
         
