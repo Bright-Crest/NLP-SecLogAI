@@ -1,0 +1,168 @@
+# NL2SQL 模块的项目智能
+
+## 核心工作流程
+
+以下是NL2SQL模块的完整工作流程，了解这个流程对于后续开发和调试至关重要：
+
+1. 用户通过Web界面或API发送自然语言查询
+2. 查询预处理器提取时间范围和实体信息
+3. 根据环境变量决定使用API或模式匹配策略
+4. 生成SQL查询（或使用回退方法）
+5. 增强SQL中的实体匹配
+6. 执行SQL并返回结果
+7. 格式化响应JSON返回给用户
+
+## 关键开发模式
+
+### 1. 错误处理链模式
+
+```python
+try:
+    # 主要转换逻辑
+    processed_query, time_range = self._preprocess_query(query_text)
+    prompt = self._build_prompt(processed_query, time_range)
+    result = self._call_openrouter_api(prompt)
+    sql = self._extract_sql(result)
+    enhanced_sql = self._enhance_entity_matching(sql, processed_query)
+    return {"sql": enhanced_sql, ...}
+except Exception as e:
+    # 回退策略
+    fallback_result = self._pattern_matching_fallback(processed_query, time_range)
+    return {"sql": fallback_result, ...}
+```
+
+说明：维护错误处理链，确保每个步骤失败时都有合适的回退方案。
+
+### 2. 预处理-处理-后处理模式
+
+在代码中保持预处理、主处理和后处理清晰分离：
+1. 预处理负责解析用户输入
+2. 主处理负责核心转换逻辑
+3. 后处理负责增强和优化结果
+
+这种模式使代码更易维护，功能边界清晰。
+
+### 3. 环境敏感模式
+
+代码应当根据环境变量改变行为，特别是API可用性：
+
+```python
+if not api_key or api_key.strip() == "":
+    # 使用非API回退方法
+else:
+    # 使用API方法
+```
+
+这种模式使系统在不同环境中都能可靠工作。
+
+## 调试窍门
+
+1. **查询预处理**：
+   - 调试正则匹配问题，使用单独的正则测试而不是完整流程
+   - 检查预处理前后的查询文本变化
+
+2. **API调用**：  
+   - 使用小的测试查询来验证API调用流程
+   - 保存API响应以便分析问题
+
+3. **SQL增强**：
+   - 单独测试`_enhance_entity_matching`函数
+   - 比较增强前后的SQL差异
+
+4. **执行错误**：
+   - 捕获执行错误时，要保留原始SQL和完整错误消息
+   - 检查字段名称、表名和语法
+
+## 命名约定
+
+- 所有私有方法以下划线开头：`_preprocess_query`
+- 工具函数使用全小写+下划线：`convert_to_sql`
+- 类使用驼峰命名：`NL2SQLConverter`
+- 常量使用全大写：`OPENROUTER_API_URL`
+
+## 代码组织规则
+
+1. 导入顺序：
+   ```python
+   # 标准库
+   import os
+   import re
+   
+   # 第三方库
+   import requests
+   from dotenv import load_dotenv
+   
+   # 本地模块
+   from models.db import get_db
+   ```
+
+2. 方法顺序：
+   - 构造函数
+   - 公共方法
+   - 私有辅助方法
+   - 静态工具方法
+
+3. 每个主要方法前保留完整文档字符串
+
+## 常见问题与解决方案
+
+1. **None对象调用方法出错**：
+   - 问题：`if not os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENROUTER_API_KEY").strip() == ""`
+   - 解决：`api_key = os.environ.get("OPENROUTER_API_KEY", ""); if not api_key or api_key.strip() == ""`
+
+2. **复杂查询解析失败**：
+   - 问题：`_extract_sql`方法无法从响应中提取SQL
+   - 解决：改进正则表达式，增加对不同SQL格式的支持
+
+3. **正则表达式匹配失败**：
+   - 问题：时间表达式或实体表达式无法匹配
+   - 解决：测试并扩展正则表达式模式，处理更多变体
+
+4. **SQL执行错误**：
+   - 问题：生成的SQL执行时出错
+   - 解决：添加SQL验证步骤，检查关键字、表名和字段名
+
+## 测试策略
+
+1. **单元测试**：
+   - 为每个关键方法编写单元测试
+   - 使用mock对象模拟API响应
+   - 测试不同输入的预处理结果
+
+2. **集成测试**：
+   - 测试完整查询流程
+   - 验证不同类型查询的结果
+   - 检查错误处理机制
+
+3. **回归测试**：
+   - 维护典型查询的测试套件
+   - 每次更改后运行回归测试
+   - 记录性能和准确性指标
+
+## 性能优化提示
+
+1. **正则表达式优化**：
+   - 避免使用贪婪模式(`.*`)，改用非贪婪模式(`.*?`)
+   - 对频繁使用的正则表达式进行预编译
+
+2. **API调用优化**：
+   - 实现简单查询的缓存机制
+   - 使用超时设置避免长时间等待
+
+3. **SQL生成优化**：
+   - 为常见查询模式创建模板
+   - 避免不必要的JOIN和子查询
+
+## 用户体验注意事项
+
+1. **错误消息**：
+   - 技术错误消息对用户不友好
+   - 创建用户友好的错误映射
+
+2. **响应时间**：
+   - API调用可能较慢
+   - 添加加载指示器和部分结果
+
+3. **查询建议**：
+   - 为用户提供查询示例
+   - 添加自动完成功能 
