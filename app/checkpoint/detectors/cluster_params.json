@@ -1,0 +1,1 @@
+{"method": "cluster", "n_neighbors": 5, "n_clusters": 10, "fit_memory_size": 10000, "feature_dim": 256, "is_fitted": true, "score_stats": {"min": 0.08119409531354904, "max": 0.3086402714252472, "sum": 76.36524963378906, "count": 512}}

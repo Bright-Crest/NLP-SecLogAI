@@ -6,7 +6,7 @@ import json
 import time
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MODEL_DIR = os.path.join(ROOT_DIR, "ai_detect", "checkpoint")
+MODEL_DIR = os.path.join(ROOT_DIR, "app", "checkpoint")
 OUTPUT_DIR = os.path.join(ROOT_DIR, "ai_detect", "output")
 
 sys.path.append(ROOT_DIR)

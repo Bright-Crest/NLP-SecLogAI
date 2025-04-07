@@ -1,0 +1,6 @@
+# 测试依赖
+pytest
+pytest-cov
+pytest-mock
+pytest-flask
+coverage

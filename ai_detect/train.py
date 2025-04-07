@@ -10,7 +10,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.ai_models.anomaly_detector import AnomalyDetector
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MODEL_DIR = os.path.join(ROOT_DIR, "ai_detect", "checkpoint")
+MODEL_DIR = os.path.join(ROOT_DIR, "app", "checkpoint")
 OUTPUT_DIR = os.path.join(ROOT_DIR, "ai_detect", "output")
 
 

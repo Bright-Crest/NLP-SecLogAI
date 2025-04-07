@@ -1,1 +1,0 @@
-{"method": "lof", "n_neighbors": 20, "n_clusters": 10, "fit_memory_size": 10000, "feature_dim": 256, "is_fitted": true}
