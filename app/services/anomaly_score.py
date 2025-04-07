@@ -4,6 +4,9 @@ import logging
 import numpy as np
 import torch
 
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+MODEL_DIR = os.path.join(ROOT_DIR, "app", "checkpoint")
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from app.ai_models.anomaly_detector import AnomalyDetector
 from app.ai_models.log_window import LogWindow
@@ -22,7 +25,7 @@ class AnomalyScoreService:
     支持KNN增强的异常检测
     """
     
-    def __init__(self, model_dir=None, window_size=10, tokenizer_name='prajjwal1/bert-mini', detection_method='ensemble'):
+    def __init__(self, model_dir=MODEL_DIR, window_size=10, tokenizer_name='prajjwal1/bert-mini', detection_method='ensemble'):
         """
         初始化异常评分服务
         
@@ -43,7 +46,8 @@ class AnomalyScoreService:
             model_dir=model_dir,
             window_size=window_size,
             tokenizer_name=tokenizer_name,
-            detection_method=detection_method
+            detection_method=detection_method,
+            load_from_model_dir=True
         )
         
         # 保留log_window实例以保持兼容性
@@ -327,7 +331,7 @@ class AnomalyScoreService:
 # 全局实例，便于外部调用
 anomaly_service = None
 
-def init_anomaly_service(model_dir=None, window_size=10):
+def init_anomaly_service(model_dir=MODEL_DIR, window_size=10):
     """初始化异常评分服务"""
     global anomaly_service
     anomaly_service = AnomalyScoreService(model_dir, window_size)
@@ -337,5 +341,5 @@ def get_anomaly_service():
     """获取异常评分服务实例"""
     global anomaly_service
     if anomaly_service is None:
-        anomaly_service = AnomalyScoreService()
+        anomaly_service = AnomalyScoreService(model_dir=MODEL_DIR)
     return anomaly_service 

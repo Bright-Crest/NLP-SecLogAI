@@ -268,12 +268,11 @@ function updateSingleResultUI(data) {
     
     // 更新结果解释
     let explanation = '该日志';
-    // if (data.is_anomaly) {
-    //     explanation += `被检测为异常，异常分数为 ${scorePercent}%，高于阈值 ${Math.round(data.threshold * 100)}%。`;
-    // } else {
-    //     explanation += `被检测为正常，异常分数为 ${scorePercent}%，低于阈值 ${Math.round(data.threshold * 100)}%。`;
-    // }
-    explanation += `异常分数为 ${scorePercent}%，阈值为 ${Math.round(data.threshold * 100)}%。`;
+    if (data.is_anomaly) {
+        explanation += `被检测为异常，异常分数为 ${scorePercent}%，高于阈值 ${Math.round(data.threshold * 100)}%。`;
+    } else {
+        explanation += `被检测为正常，异常分数为 ${scorePercent}%，低于阈值 ${Math.round(data.threshold * 100)}%。`;
+    }
     document.getElementById('resultExplanation').textContent = explanation;
     
     // 创建或更新仪表盘图表

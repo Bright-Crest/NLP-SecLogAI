@@ -7,7 +7,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 from app.services.anomaly_score import get_anomaly_service, init_anomaly_service
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-MODEL_DIR = os.path.join(ROOT_DIR, 'ai_detect', 'checkpoint')
+MODEL_DIR = os.path.join(ROOT_DIR, 'app', 'checkpoint')
 
 # 创建蓝图
 ai_bp = Blueprint('ai', __name__, url_prefix='/ai')
@@ -51,7 +51,6 @@ def init_ai_bp(app=None):
         try:
             # 尝试使用before_first_request (Flask 2.0之前的版本)
             app.before_first_request(setup_ai_services)
-            logger.info("使用app.before_first_request注册AI服务初始化")
         except AttributeError:
             # 对于Flask 2.0+版本，手动设置一个应用级别的before_request
             @app.before_request
@@ -59,11 +58,9 @@ def init_ai_bp(app=None):
                 if not hasattr(app, '_ai_services_initialized'):
                     setup_ai_services()
                     setattr(app, '_ai_services_initialized', True)
-            logger.info("使用app.before_request钩子注册AI服务初始化")
     else:
         # 如果没有传递app参数，那么直接初始化服务
         setup_ai_services()
-        logger.info("直接初始化AI服务")
 
 # 注册路由函数，供测试和应用使用
 def register_routes(app):

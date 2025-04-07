@@ -199,9 +199,9 @@ def parse_args():
     # 训练参数
     parser.add_argument("--num_epochs", type=int, default=10,
                         help="训练轮次")
-    parser.add_argument("--batch_size", type=int, default=64,
+    parser.add_argument("--batch_size", type=int, default=128,
                         help="批次大小")
-    parser.add_argument("--save_steps", type=int, default=200,
+    parser.add_argument("--save_steps", type=int, default=100,
                         help="保存模型的步数间隔")
     parser.add_argument("--eval_ratio", type=float, default=0.2,
                         help="自动划分时评估数据比例（当未提供eval_file时使用）")

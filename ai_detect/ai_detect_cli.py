@@ -105,7 +105,8 @@ def main():
     try:
         detector = AnomalyDetector(
             tokenizer_name=args.tokenizer_name,
-            window_size=args.window_size
+            window_size=args.window_size,
+            load_from_model_dir=True
         )
     except Exception as e:
         logging.error(f"初始化检测器失败: {str(e)}")

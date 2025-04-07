@@ -112,7 +112,8 @@ class AnomalyDetector:
                  output_dir=OUTPUT_DIR,
                  tokenizer_name="prajjwal1/bert-mini",
                  window_size=10,
-                 detection_method='ensemble'):
+                 detection_method='ensemble',
+                 load_from_model_dir=False):
         """
         初始化异常检测器
         
@@ -122,6 +123,7 @@ class AnomalyDetector:
             tokenizer_name: 使用的tokenizer名称
             window_size: 日志窗口大小
             detection_method: 异常检测方法，支持'knn', 'cluster', 'lof', 'iforest', 'reconstruction', 'ensemble'
+            load_from_model_dir: 是否从模型目录加载模型
         """
         self.model_dir = model_dir
         self.output_dir = output_dir
@@ -147,7 +149,7 @@ class AnomalyDetector:
         self.window = LogWindow(tokenizer_name=tokenizer_name, window_size=window_size)
         
         # 初始化模型
-        self.model = create_tiny_log_bert(model_dir)
+        self.model = create_tiny_log_bert(model_dir) if load_from_model_dir else create_tiny_log_bert()
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model.to(self.device)
         
@@ -451,7 +453,7 @@ class AnomalyDetector:
             evaluation_strategy="steps" if eval_dataset else "no",
             eval_steps=save_steps if eval_dataset else None,
             save_steps=save_steps,
-            save_total_limit=3,
+            save_total_limit=5,
             logging_dir=tensorboard_log_dir,
             logging_steps=100,
             # 保存最佳模型相关配置

@@ -16,13 +16,4 @@ output/*
 !output/evaluation/*
 
 # --- CHECKPOINT ---
-checkpoint/*
-# 忽略所有以 checkpoint- 开头的目录
-checkpoint-*/
-# 保留 checkpoint/config.json 文件
-!checkpoint/config.json
-!checkpoint/model.safetensors
-!checkpoint/detectors/
-!checkpoint/detectors/*.json
-!checkpoint/tokenizer/
-!checkpoint/tokenizer/*.json
+checkpoint/

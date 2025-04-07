@@ -26,7 +26,8 @@ class NL2SQLConverter:
     """自然语言转SQL转换器"""
     
     def __init__(self, 
-                 model_name: str = "openrouter/auto", # "deepseek/deepseek-r1:free" 
+                 # model_name: str = "openrouter/auto", # "deepseek/deepseek-r1:free" 
+                 model_name: str = "deepseek/deepseek-r1:free", # "openrouter/auto" 
                  table_schema: Optional[Dict[str, Any]] = None,
                  max_tokens: int = 500,
                  temperature: float = 0.1):

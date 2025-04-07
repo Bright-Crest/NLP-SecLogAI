@@ -252,6 +252,14 @@ class UnsupervisedAnomalyDetector:
         self.fit_memory_size = fit_memory_size
         self.feature_dim = feature_dim
         self.is_fitted = False
+        
+        # 添加统计数据，用于基于历史数据的归一化
+        self.score_stats = {
+            'min': None,
+            'max': None,
+            'sum': 0,
+            'count': 0
+        }
     
     def update_memory(self, features):
         """更新特征记忆库"""
@@ -284,16 +292,47 @@ class UnsupervisedAnomalyDetector:
         try:
             if self.method == 'knn':
                 self.detector.fit(self.memory_features)
+                # 计算记忆库中所有样本的异常分数，用于统计
+                distances, _ = self.detector.kneighbors(self.memory_features)
+                memory_scores = np.mean(distances, axis=1)
+                
             elif self.method == 'cluster':
                 self.detector.fit(self.memory_features)
+                # 计算记忆库中所有样本的异常分数，用于统计
+                distances = self.detector.transform(self.memory_features)
+                memory_scores = np.min(distances, axis=1)
+                
             elif self.method == 'lof' or self.method == 'iforest':
                 self.detector.fit(self.memory_features)
+                # 计算记忆库中所有样本的异常分数，用于统计
+                if hasattr(self.detector, 'decision_function'):
+                    memory_scores = -self.detector.decision_function(self.memory_features)
             
+            self.update_score_stats(memory_scores)
             self.is_fitted = True
             return True
         except Exception as e:
             print(f"拟合异常检测器失败: {e}")
             return False
+    
+    def update_score_stats(self, scores):
+        """更新分数统计信息，用于基于历史数据的归一化"""
+        if scores is None or len(scores) == 0:
+            return
+            
+        current_min = float(np.min(scores))
+        current_max = float(np.max(scores))
+        
+        # 更新最小值和最大值
+        if self.score_stats['min'] is None or current_min < self.score_stats['min']:
+            self.score_stats['min'] = current_min
+        
+        if self.score_stats['max'] is None or current_max > self.score_stats['max']:
+            self.score_stats['max'] = current_max
+        
+        # 更新总和和计数，用于计算均值（可选）
+        self.score_stats['sum'] += float(np.sum(scores))
+        self.score_stats['count'] += len(scores)
     
     def get_anomaly_score(self, features):
         """
@@ -338,11 +377,12 @@ class UnsupervisedAnomalyDetector:
             # 返回负数，值越小表示越异常，需要取相反数
             scores = -self.detector.decision_function(features_np)
         
-        # 归一化分数到0-1范围
-        if len(scores) > 1:
-            min_val, max_val = scores.min(), scores.max()
-            if max_val > min_val:
-                scores = (scores - min_val) / (max_val - min_val)
+        max_val = np.max(scores)
+        min_val = np.min(scores)
+        if max_val > min_val:
+            scores = (scores - min_val) / (max_val - min_val)
+        else:
+            scores = np.clip(scores, 0, 1)
         
         # 转换为tensor并返回
         return torch.FloatTensor(scores).to(features.device)
@@ -366,8 +406,41 @@ class ReconstructionHead(nn.Module):
             nn.ReLU(),
             nn.Linear(128, hidden_size),
         )
+        
+        # 添加统计数据，用于基于历史数据的归一化
+        self.register_buffer('error_min', torch.tensor(float('inf')))
+        self.register_buffer('error_max', torch.tensor(float('-inf')))
+        self.register_buffer('error_sum', torch.tensor(0.0))
+        self.register_buffer('error_count', torch.tensor(0))
+        
+        # 是否已经累积了足够的统计数据
+        self.have_stats = False
     
-    def forward(self, hidden_states):
+    def update_error_stats(self, errors):
+        """更新误差统计信息"""
+        if errors is None or len(errors) == 0:
+            return
+            
+        with torch.no_grad():
+            batch_min = errors.min().item()
+            batch_max = errors.max().item()
+            
+            # 更新最小值和最大值
+            if batch_min < self.error_min:
+                self.error_min = torch.tensor(batch_min, device=self.error_min.device)
+            
+            if batch_max > self.error_max:
+                self.error_max = torch.tensor(batch_max, device=self.error_max.device)
+            
+            # 更新总和和计数
+            self.error_sum += errors.sum().item()
+            self.error_count += len(errors)
+            
+            # 检查是否已累积足够的统计数据
+            if self.error_count > 100 and (self.error_max - self.error_min) > 1e-6:
+                self.have_stats = True
+    
+    def forward(self, hidden_states, update_stats=True):
         """计算重构误差"""
         # 只使用[CLS]向量
         cls_output = hidden_states[:, 0]
@@ -381,13 +454,40 @@ class ReconstructionHead(nn.Module):
         # 沿特征维度求和，得到每个样本的重构误差
         sample_errors = reconstruction_error.sum(dim=1)
         
-        # 归一化到0-1范围
-        if len(sample_errors) > 1:
-            min_val, max_val = sample_errors.min(), sample_errors.max()
-            if max_val > min_val:
-                sample_errors = (sample_errors - min_val) / (max_val - min_val)
+        # 更新统计信息
+        if not self.have_stats or update_stats:
+            self.update_error_stats(sample_errors)
         
         return sample_errors, bottleneck
+    
+    def normalize_error(self, sample_errors):
+        """归一化误差"""
+        # 基于历史统计数据进行归一化，而不是基于当前批次
+        if self.have_stats:
+            min_val, max_val = self.error_min.item(), self.error_max.item()
+            if max_val > min_val:
+                normalized_errors = (sample_errors - min_val) / (max_val - min_val)
+                # 对于超出历史范围的异常值进行处理
+                normalized_errors = torch.clamp(normalized_errors, 0, 1)
+                return normalized_errors
+        else:
+            # 如果没有足够的统计数据，则使用批次归一化作为备选
+            if len(sample_errors) > 1:
+                min_val, max_val = sample_errors.min(), sample_errors.max()
+                if max_val > min_val:
+                    normalized_errors = (sample_errors - min_val) / (max_val - min_val)
+            normalized_errors = torch.clamp(normalized_errors, 0, 1)
+            return normalized_errors
+        
+    def get_stats(self):
+        """获取误差统计信息"""
+        return {
+            'min': self.error_min.item(),
+            'max': self.error_max.item(),
+            'mean': (self.error_sum / max(1, self.error_count)).item(),
+            'count': self.error_count.item(),
+            'have_stats': self.have_stats
+        }
 
 
 class AnomalyScoreEnsemble(nn.Module):
@@ -410,11 +510,10 @@ class AnomalyScoreEnsemble(nn.Module):
         
         # 初始化各检测器权重
         if fusion_method == 'dynamic_weight':
-            # 可学习的权重参数
-            self.detector_weights = nn.Parameter(torch.ones(num_detectors))
+            self.detector_weights = nn.Parameter(torch.ones(num_detectors) * 1/num_detectors)
         elif fusion_method == 'static_weight':
             # 固定权重，但可手动设置
-            self.register_buffer('detector_weights', torch.ones(num_detectors))
+            self.register_buffer('detector_weights', torch.ones(num_detectors) * 1/num_detectors)
         
         # 记录检测器性能指标
         self.detector_performance = {}
@@ -466,37 +565,38 @@ class AnomalyScoreEnsemble(nn.Module):
             # 使用基于方差的权重策略计算动态权重
             detector_scores_dict = {detector_names[i]: scores[i] for i in range(len(scores))}
             var_weights = VarianceWeightStrategy.compute_weights(detector_scores_dict)
-            
+        
             # 创建权重向量
             weights = torch.zeros(self.num_detectors, device=self.device)
             for i, name in enumerate(detector_names):
                 if name in var_weights:
                     weights[i] = torch.tensor(var_weights[name], device=self.device)
             
+            weights = torch.ones(self.num_detectors, device=self.device) * 1/self.num_detectors
             # 确保权重和为1
             if weights.sum() > 0:
                 weights = weights / weights.sum()
             else:
                 # 如果所有权重都是0，则使用均匀权重
                 weights = torch.ones_like(weights) / self.num_detectors
-            
+        
             # 更新模型的动态权重参数
             with torch.no_grad():
-                self.detector_weights.copy_(torch.log(weights + 1e-8))  # 使用log将权重转换为logits
+                self.detector_weights.copy_(weights)  # 使用log将权重转换为logits
             
             # 加权求和计算最终分数
-            ensemble_score = torch.zeros_like(scores[0])
-            for i, score in enumerate(scores):
-                ensemble_score += weights[i] * score
+            # 将分数堆叠成矩阵，然后进行矩阵乘法计算加权和
+            stacked_scores = torch.stack(scores, dim=0)  # [num_detectors, batch_size]
+            ensemble_score = torch.matmul(self.detector_weights, stacked_scores)
             
         elif self.fusion_method == 'static_weight':
             # 使用softmax获取权重，确保权重和为1且非负
             norm_weights = F.softmax(self.detector_weights, dim=0)
             
             # 加权求和
-            ensemble_score = torch.zeros_like(scores[0])
-            for i, score in enumerate(scores):
-                ensemble_score += norm_weights[i] * score
+            # 将分数堆叠成矩阵，然后进行矩阵乘法计算加权和
+            stacked_scores = torch.stack(scores, dim=0)  # [num_detectors, batch_size]
+            ensemble_score = torch.matmul(norm_weights, stacked_scores)
                 
             weights = norm_weights
         
@@ -732,9 +832,9 @@ class TinyLogBERT(BertForMaskedLM):
             output_hidden_states=True,  # 总是获取隐藏状态
             return_dict=True,
         )
-        
+       
         # 获取MLM的loss
-        mlm_loss = mlm_outputs.loss if labels is not None else torch.tensor(0.0).to(input_ids.device)
+        mlm_loss = mlm_outputs.loss
         
         # 获取序列输出用于异常检测和对比学习
         sequence_output = mlm_outputs.hidden_states[-1]
@@ -743,12 +843,18 @@ class TinyLogBERT(BertForMaskedLM):
         q = sequence_output[:, 0]  # [batch_size, hidden_size]
         q_norm = F.normalize(q, dim=1)
         
+        # 获取设备信息，用于后续张量创建
+        device = q.device if q is not None else (
+            input_ids.device if input_ids is not None else 
+            torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        )
+        
         # 初始化对比损失和对比距离
-        contrastive_loss = torch.tensor(0.0).to(input_ids.device)
-        contrastive_distances = torch.zeros(q_norm.size(0)).to(q_norm.device)  # 对每个样本的对比距离
+        contrastive_loss = torch.tensor(0.0).to(device)
+        contrastive_distances = torch.zeros(q_norm.size(0)).to(device)  # 对每个样本的对比距离
         
         # 计算重构损失
-        reconstruction_error, bottleneck = self.reconstruction_head(sequence_output)
+        reconstruction_error, bottleneck = self.reconstruction_head(sequence_output, update_stats=training_phase)
         
         # MoCo风格的对比学习
         if augment_batch and tokenizer is not None:
@@ -779,6 +885,8 @@ class TinyLogBERT(BertForMaskedLM):
                     return_dict=True,
                     output_hidden_states=True
                 )
+                if positive_pairs is not None:
+                    positive_pairs = augmented_outputs
                 
                 # 获取并归一化key特征
                 k = augmented_outputs.hidden_states[-1][:, 0]  # [batch_size, hidden_size]
@@ -873,7 +981,7 @@ class TinyLogBERT(BertForMaskedLM):
                 method_scores[name] = detector.get_anomaly_score(q)
             
             # 添加重构误差作为一种检测方法
-            method_scores['reconstruction'] = reconstruction_error
+            method_scores['reconstruction'] = self.reconstruction_head.normalize_error(reconstruction_error)
             
             # 累积方法分数，用于计算方差权重
             if self.enable_ensemble and self.anomaly_ensemble.fusion_method == 'dynamic_weight':
@@ -950,8 +1058,12 @@ class TinyLogBERT(BertForMaskedLM):
             current_weights = self.loss_weighting.get_weights()
         else:
             # 非训练状态，简单相加
-            total_loss = mlm_loss + contrastive_loss + reconstruction_error.mean()
-            current_weights = torch.tensor([1.0, 1.0, 1.0])
+            # 检查损失是否为None，如果是则用0替代
+            mlm_loss = mlm_loss if mlm_loss is not None else torch.tensor(0.0, device=reconstruction_error.device)
+            contrastive_loss = contrastive_loss if isinstance(contrastive_loss, torch.Tensor) else torch.tensor(0.0, device=reconstruction_error.device)
+            reconstruction_mean = reconstruction_error.mean() if reconstruction_error is not None else torch.tensor(0.0, device=contrastive_loss.device)
+            total_loss = mlm_loss + contrastive_loss + reconstruction_mean
+            current_weights = torch.tensor([1.0, 1.0, 1.0], device=total_loss.device)
         
         # 构建返回结果
         return {
@@ -1008,18 +1120,25 @@ class TinyLogBERT(BertForMaskedLM):
                 feature_path = os.path.join(detector_dir, f"{method}_features.npy")
                 np.save(feature_path, detector.memory_features)
                 
-                # 保存检测器参数
+                # 保存检测器参数和统计信息
                 params = {
                     "method": detector.method,
                     "n_neighbors": detector.n_neighbors,
                     "n_clusters": detector.n_clusters,
                     "fit_memory_size": detector.fit_memory_size,
                     "feature_dim": detector.feature_dim,
-                    "is_fitted": detector.is_fitted
+                    "is_fitted": detector.is_fitted,
+                    "score_stats": detector.score_stats  # 保存分数统计信息
                 }
                 param_path = os.path.join(detector_dir, f"{method}_params.json")
                 with open(param_path, "w") as f:
                     json.dump(params, f)
+        
+        # 保存重构头的统计信息
+        recon_stats = self.reconstruction_head.get_stats()
+        recon_stats_path = os.path.join(detector_dir, "reconstruction_stats.json")
+        with open(recon_stats_path, "w") as f:
+            json.dump(recon_stats, f)
         
         # 保存累积的方法分数（用于方差权重计算）
         if hasattr(self, "accumulated_method_scores") and self.accumulated_method_scores:
@@ -1075,6 +1194,24 @@ class TinyLogBERT(BertForMaskedLM):
             print(f"未找到检测器特征目录: {detector_dir}，将使用空特征内存")
             return model
         
+        # 加载重构头的统计信息
+        recon_stats_path = os.path.join(detector_dir, "reconstruction_stats.json")
+        if os.path.exists(recon_stats_path):
+            try:
+                with open(recon_stats_path, "r") as f:
+                    recon_stats = json.load(f)
+                
+                # 恢复重构头的统计信息
+                model.reconstruction_head.error_min.copy_(torch.tensor(recon_stats['min']))
+                model.reconstruction_head.error_max.copy_(torch.tensor(recon_stats['max']))
+                model.reconstruction_head.error_sum.copy_(torch.tensor(recon_stats['mean'] * recon_stats['count']))
+                model.reconstruction_head.error_count.copy_(torch.tensor(recon_stats['count']))
+                model.reconstruction_head.have_stats = recon_stats.get('have_stats', False)
+                
+                print(f"已加载重构头的统计信息")
+            except Exception as e:
+                print(f"加载重构头统计信息时出错: {e}")
+        
         # 加载检测方法配置
         config_path = os.path.join(detector_dir, "detector_config.json")
         if os.path.exists(config_path):
@@ -1114,9 +1251,17 @@ class TinyLogBERT(BertForMaskedLM):
                                 if hasattr(detector, param_name):
                                     setattr(detector, param_name, param_value)
                     
-                    # 重新拟合检测器
+                    # 重新拟合检测器，但保留加载的统计信息
                     if detector.memory_features is not None and len(detector.memory_features) >= 10:
+                        # 备份统计信息，防止fit过程覆盖
+                        score_stats_backup = detector.score_stats.copy() if hasattr(detector, 'score_stats') else None
+                        
                         detector.fit(force=True)
+                        
+                        # 如果有备份的统计信息且fit过程覆盖了，则恢复
+                        if score_stats_backup and detector.score_stats != score_stats_backup:
+                            detector.score_stats = score_stats_backup
+                            
                         print(f"检测器 {method} 已加载 {len(detector.memory_features)} 个特征样本并重新拟合")
                     else:
                         print(f"检测器 {method} 的特征样本数量不足，跳过拟合")

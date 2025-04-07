@@ -132,11 +132,12 @@ def main():
     
     # 初始化检测器
     detector = AnomalyDetector(
-        model_dir=os.path.dirname(args.model_dir),
+        model_dir=args.model_dir,
         output_dir=args.output_dir,
         tokenizer_name=args.tokenizer_name,
         window_size=args.window_size,
-        detection_method=args.detection_method
+        detection_method=args.detection_method,
+        load_from_model_dir=True
     )
     
     # 开始评估
