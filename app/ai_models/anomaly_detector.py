@@ -151,7 +151,8 @@ class AnomalyDetector:
         # 初始化模型
         self.model = create_tiny_log_bert(model_dir) if load_from_model_dir else create_tiny_log_bert()
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.model.to(self.device)
+        if not any(p.device.type == "meta" for p in self.model.parameters()):
+            self.model.to(self.device)
         
         logging.info(f"异常检测器初始化完成，使用设备: {self.device}，检测方法: {detection_method}")
     
@@ -1118,11 +1119,11 @@ class AnomalyDetector:
         # 加载模型（如果需要）
         if self.model is None and model_dir:
             self.model = create_tiny_log_bert(model_dir)
-            self.model.to(self.device)
             self.model.eval()
         elif self.model is None:
             raise ValueError("未提供有效的模型路径，且当前没有加载模型")
         
+        self.model.to(self.device)
         # 设置检测方法
         if method is not None:
             if method == 'ensemble':
@@ -1205,11 +1206,11 @@ class AnomalyDetector:
         # 加载模型（如果需要）
         if self.model is None and model_dir:
             self.model = create_tiny_log_bert(model_dir)
-            self.model.to(self.device)
             self.model.eval()
         elif self.model is None:
             raise ValueError("未提供有效的模型路径，且当前没有加载模型")
         
+        self.model.to(self.device)
         # 设置检测方法
         if method is not None:
             if method == 'ensemble':

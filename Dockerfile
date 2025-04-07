@@ -1,39 +1,45 @@
-# 使用官方Python镜像
 FROM python:3.11-slim
 
-# 设置工作目录
-WORKDIR /app
+ARG USE_GPU=true
+ARG CUDA=118
 
 # 设置环境变量，防止Python生成.pyc文件并确保日志直接输出到控制台
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# 安装系统级依赖
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    git \
-    && rm -rf /var/lib/apt/lists/*
+RUN mkdir -p /NLP_SecLogAI
+WORKDIR /NLP_SecLogAI
 
-# 首先复制并安装项目主要依赖
+# 设置 pip 源为清华镜像
+RUN mkdir -p /etc/pip \
+    && echo "[global]\nindex-url = https://pypi.tuna.tsinghua.edu.cn/simple" > /etc/pip.conf
+
+RUN pip install --no-cache-dir --upgrade pip
+
+RUN if [ "$USE_GPU" = "false" ]; then \
+    pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu; \
+    else \
+    pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cu${CUDA}; \
+    fi
+
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
-# 复制并安装AI检测模块的额外依赖
-COPY ai_detect/requirements.txt ./ai_detect-requirements.txt
-RUN pip install --no-cache-dir -r ai_detect-requirements.txt
+COPY ai_detect/requirements.txt ai_detect/requirements.txt
+RUN pip install --no-cache-dir -r ai_detect/requirements.txt
 
-# 复制.env文件（如果存在）
-COPY .env* ./
+COPY tests/requirements.txt tests/requirements.txt
+RUN pip install --no-cache-dir -r tests/requirements.txt
 
-# 复制项目文件
-COPY . .
+COPY app/ app/
+COPY geolite/ geolite/
+COPY config.py config.py
+COPY run.py run.py
 
-# 创建必要的目录（如果不存在）
-RUN mkdir -p instance
+COPY ai_detect/ ai_detect/
 
-# 设置端口
+COPY tests/ tests/
+
 EXPOSE 5000
 
-# 启动应用
-CMD ["python", "run.py"] 
+CMD ["python", "run.py"]

@@ -5,6 +5,131 @@
 
 NLP-SecLogAI 是一个创新型安全日志分析系统，利用先进的自然语言处理技术对安全日志进行智能化处理。本系统突破了传统 SIEM 系统（如 Splunk、ELK）仅依赖规则匹配的局限，实现了对日志的语义理解和智能化处理，有效降低误报率，提高新型攻击的检测能力。
 
+
+
+## 环境配置与运行
+
+以下命令在根目录中运行
+
+
+
+### 使用docker
+
+#### 1. 配置.env
+
+复制`.env.example`文件为 `.env`
+
+1. 可添加Openrouter api 密钥；
+2. 可以选择是否使用pytorch的gpu版本；
+3. 可以设置CUDA版本（注意中间不要加点号，只能是3位数字，可上pytorch官网查询）。
+
+#### 2. 构建镜像
+
+```bash
+make build
+```
+
+或：
+
+```bash
+# GPU版本
+docker build -t nlp-seclogai:latest . --build-arg USE_GPU=true --build-arg CUDA=118
+# CPU版本
+docker build -t nlp-seclogai:cpu . --build-arg USE_GPU=false
+```
+
+#### 3. 运行web app
+
+```bash
+make run
+```
+
+或：
+
+```bash
+# GPU版本
+docker run --name nlp-seclogai-web-app -d -p 5000:5000 --env-file .env --gpus all nlp-seclogai:latest
+# CPU版本
+docker run --name nlp-seclogai-web-app -d -p 5000:5000 --env-file .env nlp-seclogai:cpu
+```
+
+#### 4. 打开网页
+
+`127.0.0.1:5000` 或 `<ip>:5000`
+
+#### 测试
+
+```bash
+make test-train
+make test-eval
+make test
+```
+
+
+
+### 手动配置python环境
+
+#### 1. 配置.env
+
+复制`.env.example`文件为 `.env`
+
+1. 可添加Openrouter api 密钥；
+2. 可以选择是否使用pytorch的gpu版本；
+3. 可以设置CUDA版本（注意中间不要加点号，只能是3位数字，可上pytorch官网查询）。
+
+#### 2. 安装pytorch
+
+参见官网：[PyTorch](https://pytorch.org/)
+
+#### 3. 安装运行app的必要python库
+
+```bash
+pip install -r requirements.txt
+```
+
+#### 4. 运行web app
+
+```bash
+python run.py
+```
+
+#### 5. 打开网页
+
+`127.0.0.1:5000` 或 `<ip>:5000`
+
+#### 测试
+
+安装测试必要的python库
+
+```bash
+pip install -r ai_detect/requirements.txt
+pip install -r tests/requirements.txt
+```
+
+测试训练
+
+```bash
+python ai_detect/train.py \
+		--train_file ai_detect/dataset/Linux/Linux.log \
+		--num_epochs 1 \
+		--not_use_tensorboard
+```
+
+测试评估
+
+```bash
+python ai_detect/evaluate.py \
+		--test_file ai_detect/dataset/Linux/Linux.log \
+```
+
+单元测试、集成测试等
+
+```bash
+pytest tests/
+```
+
+
+
 ## 核心功能
 
 - **NLP日志解析**：使用BERT模型将非结构化日志转换为结构化数据
@@ -63,37 +188,6 @@ app/
 
 本项目基于flask结构，在docker上集成环境，因此环境不需额外配置。运行run.py即可在本地5000端口上运行可视化界面。
 
-## 开发指南 (AI模块)
-
-### 环境配置
-
-```bash
-# 克隆仓库
-git clone https://github.com/yourusername/NLP-SecLogAI.git
-cd NLP-SecLogAI/ai
-
-# 创建虚拟环境
-python -m venv venv
-source venv/bin/activate  # 在Windows上使用 venv\Scripts\activate
-
-# 安装依赖
-pip install -r requirements.txt
-```
-
-### 模型训练
-
-```bash
-cd training
-python train.py --config configs/bert_classifier.yaml
-```
-
-### 启动推理服务
-
-```bash
-cd inference
-uvicorn app:app --reload --port 8001
-```
-
 ## API接口
 
 AI模块提供以下关键API接口：
@@ -151,13 +245,7 @@ AND user = 'admin'
 2. 敏感文件访问
 3. 异常端口连接尝试
 
-## 贡献指南
 
-欢迎贡献代码或提出问题！请提交 Pull Request 或创建 Issue。
-
-## 许可证
-
-本项目采用 MIT 许可证 - 详情请参阅 [LICENSE](LICENSE) 文件。
 
 # TinyLogBERT 模型改进
 

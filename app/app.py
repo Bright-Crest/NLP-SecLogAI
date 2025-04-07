@@ -1,7 +1,11 @@
 from flask import Flask, render_template
-#from flask_migrate import Migrate
-from app.models.db import  init_db
+import os
+import sys
 import logging
+
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(ROOT_DIR)
+from app.models.db import init_db
 
 # ---------- 1. Flask应用初始化 ----------
 

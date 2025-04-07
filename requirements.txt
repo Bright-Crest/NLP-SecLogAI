@@ -14,3 +14,4 @@ pydantic
 python-dotenv
 openrouter>=1.0.0
 flask-cors
+geoip2

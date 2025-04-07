@@ -11,9 +11,6 @@ import sys
 import pytest
 from datetime import datetime
 
-# 添加应用目录到 Python 路径
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'app')))
-
 # 示例测试数据
 @pytest.fixture
 def sample_queries():

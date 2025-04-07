@@ -8,46 +8,105 @@ __pycache__/
 *$py.class
 *.so
 .Python
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
-.nox/
-.hypothesis/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# 虚拟环境
-# 保留.env文件用于Docker环境变量
-# .env
+# Environments
+.env
 .venv
 env/
 venv/
 ENV/
+env.bak/
+venv.bak/
 
-# IDE
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Model files
+*.pt
+*.pth
+*.onnx
+*.bin
+
+# IDE specific files
 .idea/
 .vscode/
 *.swp
 *.swo
 
-# 日志
+# Logs and training artifacts
+logs/
+runs/
+checkpoints/
 *.log
 
-# 数据库
-# *.db
-# *.sqlite3
+# Data files
+*.csv
+*.tsv
+*.json
+*.jsonl
+*.sqlite
+*.db
 
-# 测试
-tests/
+# But keep example files
+!ai/training/data/logs_train.csv
+!ai/training/data/logs_test.csv
+!ai/training/data/sample_logs.txt
+
+# OS specific
+.DS_Store
+Thumbs.db 
+
+# Docker相关文件
+*Dockerfile*
+.dockerignore
 
 # 备份和临时文件
 .bak/
-*.bak
 
-# Docker相关文件
-Dockerfile
-.dockerignore
+# ai_detect文件夹规则
+# --- DATASET ---
+# 忽略 dataset 下所有内容
+ai_detect/dataset/*
+# 取消忽略 dataset/Linux/Linux.log 文件
+!ai_detect/dataset/Linux/
+ai_detect/dataset/Linux/*
+!ai_detect/dataset/Linux/Linux.log
 
-# 其他非必要文件
-.DS_Store
-# 保留README.md等文档
-# *.md 
+# --- OUTPUT ---
+# 忽略 output 下所有内容
+ai_detect/output/
+
+# --- CHECKPOINT ---
+ai_detect/checkpoint/
+
+# app 文件夹规则
+# --- CHECKPOINT ---
+app/checkpoint/*
+# 忽略所有以 checkpoint- 开头的目录
+app/checkpoint-*/
+# 保留 checkpoint/config.json 文件
+!app/checkpoint/config.json
+!app/checkpoint/model.safetensors
+!app/checkpoint/detectors/
+!app/checkpoint/detectors/*.json
+!app/checkpoint/tokenizer/
+!app/checkpoint/tokenizer/*.json
+
+# 文档
+docs/
+*.md
